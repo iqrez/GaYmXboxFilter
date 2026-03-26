@@ -1,0 +1,113 @@
+<!doctype HTML public "-//W3C//DTD HTML 4.0 Frameset//EN">
+
+<html>
+
+<head>
+<title>Remote Monitoring</title>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252">
+<meta name="generator" content="RoboHelp by eHelp Corporation www.ehelp.com">
+<link rel="StyleSheet" href="Styles.css"><style title="hcp" type="text/css">
+<!--
+b.hcp1 { font-weight:bold; }
+i.hcp2 { font-style:italic; }
+span.hcp3 { font-style:italic; }
+-->
+</style>
+</head>
+<body><a NAME=2e57640a></a>
+
+<a NAME=2e57640a></a>
+
+<a NAME=2e57640a></a>
+
+<a NAME=2e57640a></a>
+
+<a NAME=2e57640a></a>
+
+<a NAME=2e57640a></a>
+
+<a NAME=2e57640a></a>
+
+<h2><b class="hcp1">Remote Monitoring Startup </b></h2>
+
+<p><i class="hcp2">DebugView</i> has advanced remote monitoring 
+ capabilities that allow you to view debug output generated on remote systems 
+ from a central location. The remote systems must be accessible via TCP/IP. 
+ <i>DebugView</i> lets you monitor multiple remote systems simultaneously, 
+ using a hot-key or a menu selection to switch between them. If both the 
+ computer you are running the <i>DebugView</i> GUI on (the server) and 
+ the system you want to monitor (the client) are running Windows NT/2K, 
+ and they are in the same Network Neighborhood, then <i>DebugView</i> will 
+ automatically install its client software on the client. For all other 
+ combinations you must manually install and start <i>DebugView</i>’s client 
+ software on the client. </p>
+
+<h3><b class="hcp1">Manual Client Startup </b></h3>
+
+<p>If either the server or the client is running Windows 9x, or the server 
+ and client are not mutually accessible via the Windows Network Neighborhood, 
+ then you must manually start the <i>DebugView</i> client on the client 
+ computer. To do this, run the <i>DebugView</i> program on the client and 
+ specify “/c” as a command-line argument: </p>
+
+<p>dbgview /c [/t] [/s] [/e] [/g]</p>
+
+<p>The <i>DebugView</i> client window will appear and indicate that it 
+ is waiting for a connection from the <i>DebugView</i> server. </p>
+
+<p>After you have started the <i>DebugView</i> client use the <b>Computer|Connect</b> 
+ menu item or Ctrl+R hot-key sequence of the <i>DebugView</i> server to 
+ open a computer connection dialog. In the dialog enter the name or IP 
+ address of the client computer. If the client computer is in the server’s 
+ Network Neighborhood you can also use the browse button in the dialog 
+ to open a view of the Network Neighborhood and visually select the client 
+ computer. </p>
+
+<p>If you want to run the client in a “headless” mode, specify “/s” (silent) 
+ in addition to the “/c” command-line argument when you start the <i>DebugView</i> 
+ client. This will cause the <i>DebugView</i> client to not display a window, 
+ and to remain active until the current user logs out, silently connecting 
+ with and disconnecting from <i>DebugView</i> servers. </p>
+
+<p>Use the “/e” option when starting the client if you want it to notify 
+ you when server connections break. When a server connection is broken 
+ and this switch is specified you must close the notification window before 
+ the client will accept further connections. </p>
+
+<p>The &quot;/t&quot; option has the <span class="hcp3">DebugView</span> 
+ client run in the tray. The client presents a gray tray icon when there's 
+ no connection to a server and a colored icon when a server is connected. 
+ You can open the client window by double clicking the tray icon and store 
+ it back in the tray by minimizing the client window.</p>
+
+<p>If you are running <span class="hcp3">DebugView</span> 
+ from a non-console login on a system with Terminal Services you can direct 
+ the <span class="hcp3">DebugView</span> client to capture 
+ global (console) debug output with the /g switch.</p>
+
+<p>If you specify “/?” <i>DebugView</i> will tell you its supported command-line 
+ options. </p>
+
+<h3><b class="hcp1">Automatic Client Startup </b></h3>
+
+<p><i class="hcp2">Automatic startup is not supported on 
+ the Alpha. </i></p>
+
+<p>If both the client and server are running Windows NT/2K and are in the 
+ same Network Neighborhood, there is no need for you to install the <i>DebugView</i> 
+ client on the client computer. Instead, specify the client computer name 
+ or address in the connection dialog as you would if you were connecting 
+ to a manually started <i>DebugView</i> client, and <i>DebugView</i> will 
+ automatically install and start the <i>DebugView</i> client on the client 
+ computer. When you disconnect from the client <i>DebugView</i> uninstalls 
+ its client software for you. In case you want to clean up client files 
+ yourself after a non-graceful exit of the server, the files <i>DebugView</i> 
+ installs on the client are placed in &lt;winnt&gt;\system32 and include 
+ dbgvsvc.exe and dbgv.sys. </p>
+
+<p>The <i>DebugView</i> server will always attempt an automatic install, 
+ and if that fails it falls back on trying to connect to a manually installed 
+ client. </p>
+
+</body>
+</html>

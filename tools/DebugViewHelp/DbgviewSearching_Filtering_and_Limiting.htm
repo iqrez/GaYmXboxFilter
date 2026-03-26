@@ -1,0 +1,124 @@
+<!doctype HTML public "-//W3C//DTD HTML 4.0 Frameset//EN">
+
+<html>
+
+<head>
+<meta http-equiv="content-type" content="text/html;charset=Windows-1252">
+<title>Searching, Filtering and Limiting Output</title>
+<meta name="generator" content="RoboHelp by eHelp Corporation www.ehelp.com">
+<link rel="StyleSheet" href="Styles.css"><style title="hcp" type="text/css">
+<!--
+b.hcp1 { font-weight:bold; }
+i.hcp2 { font-style:italic; }
+img.hcp3 { border-style:none; }
+span.hcp4 { font-weight:bold; }
+-->
+</style>
+</head>
+<body><a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<a NAME=370c13b4></a>
+
+<h2><b class="hcp1">Searching, Filtering, and Limiting Output 
+ </b></h2>
+
+<p><i class="hcp2">DebugView</i> has several features that 
+ can help you zoom-in on the debug output you are interested in. These 
+ capabilities include searching, filtering, and limiting the number of 
+ debug output lines saved in the display. </p>
+
+<h3><b class="hcp1">Clearing the Display </b></h3>
+
+<p>To reset the output window, use the <b>Edit|Clear Display</b> menu item, 
+ <img src="clear.gif" ALT="clear.gif" style="width:20px; height:20px;" width="20" height="20" border="0" class="hcp3"> toolbar button, or Ctrl+X hot-key sequence. This also 
+ causes the sequence number to be reset to 0. </p>
+
+<h3><b class="hcp1">Searching </b></h3>
+
+<p>If you want to search for a line containing text of interest you use 
+ the find dialog. The find dialog is activated with the Ctrl+F hot-key 
+ sequence, the <b>Edit|Find</b> menu entry, or the <img src="find.gif" ALT="find.gif" style="width:20px; height:19px;" width="20" height="19" border="0" class="hcp3"> toolbar 
+ button. If the search you specify matches text in the output window, <i>DebugView 
+ </i>will highlight the matching line and turn off the display’s auto-scroll 
+ in order to keep the line in the window. To repeat a successful search, 
+ use the F3 hot-key. </p>
+
+<h3><b class="hcp1">Filtering </b></h3>
+
+<p>Another way to isolate output that you are interested in is to use <i>DebugView</i>’s 
+ filtering capability. Use the <b>Edit|Filter/Highlight</b> menu item, 
+ <img src="filter.gif" ALT="filter.gif" style="width:20px; height:20px;" width="20" height="20" border="0" class="hcp3"> toolbar button, or Ctrl-L hot-key to activate the filter 
+ dialog. The dialog contains two edit fields: include and exclude. The 
+ include field is where you enter substring expressions that match debug 
+ output lines that you want <i>DebugView</i> to display, and the exclude 
+ field is where you enter text for debug output lines that you do not want 
+ <i>DebugView</i> to display. You can enter multiple expressions, separating 
+ each with a semicolon (‘;’). Do not include spaces in the filter expression 
+ unless you want the spaces to be part of the filter. Note that the filters 
+ are interpreted in a case-insensitive manner, and that you should use 
+ ‘*’ as a wildcard. </p>
+
+<p>As an example, say you want <i>DebugView</i> to display debug output 
+ that contains either “error” or “abort”, but want to exclude lines that 
+ contain either of those strings and the word “gui”. To configure <i>DebugView</i>’s 
+ filters for this you enter “error;abort” for the include filter and “gui” 
+ for the exclude filter. If you wanted to have DebugView show only output 
+ that has &quot;MyApp:&quot; at the start of the output line and &quot;severe&quot; 
+ at the end, you could use a wildcard in the include filter: &quot;myapp:*severe&quot;.</p>
+
+<h3><b class="hcp1">Highlighting </b></h3>
+
+<p><i class="hcp2">DebugView</i> also has another type of 
+ filtering: highlighting. If you want output lines that contain certain 
+ text to be highlighted in the <i>DebugView</i> output window, enter a 
+ highlight filter. DebugView implements support for up to five different 
+ highlight filters, each with its own foreground and background color settings. 
+ Use the filter drop-down in the highlight filter area of the filter dialog 
+ to select which highlight filter you want to edit. Use the same syntax 
+ just described for include and exclude filters when defining a highlight 
+ filter.</p>
+
+<p>To change the colors used for the foreground and background of highlighted 
+ lines, click on the Colors button when you have selected the highlight 
+ filter you wish to modify. You will be asked to pick colors from a palette, 
+ and your choices will be remembered by <i>DebugView</i> from run to run. 
+ </p>
+
+<h3>Saving and Restoring Filters</h3>
+
+<p>Use the <span class="hcp4">Load</span> and <span class="hcp4">Save</span> 
+ buttons on the filter dialog to save and restore filter settings, including 
+ the include, exclude and highlighting filters, as well as the highlighting 
+ colors settings.</p>
+
+<h3><b class="hcp1">History-Depth </b></h3>
+
+<p>A final way to control <i>DebugView</i> output is to limit the number 
+ of lines that are retained in the display. You use the <b>Edit|History-Depth</b> 
+ menu item, <img src="history.gif" ALT="history.gif" style="width:20px; height:20px;" width="20" height="20" border="0" class="hcp3"> toolbar button, or the Ctrl+H hot-key sequence 
+ to activate the history-depth editor. Enter the number of output lines 
+ you want <i>DebugView</i> to retain and it will keep only that number 
+ of the most recent debug output lines, discarding older ones. A history-depth 
+ of 0 represents no limit on output lines retained. </p>
+
+<p>You do not need to use the history-depth feature to prevent all of a 
+ system’s virtual memory from being consumed in long-running captures. 
+ <i>DebugView</i> monitors system memory usage and will go into a low-memory 
+ state when it detects that memory is running low. <i>DebugView</i>’s low-memory 
+ state consists of it not capturing further debug output until the low-memory 
+ condition is no longer in effect. </p>
+
+</body>
+</html>

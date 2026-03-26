@@ -1,0 +1,38 @@
+P.bullet { 
+          x-next-type:P; 
+          font-size:8pt; 
+          font-family:Verdana, sans-serif; 
+          margin-top:0pt; 
+          margin-bottom:0pt;  }
+LI.kadov-P-Cbullet { 
+                    font-size:8pt; 
+                    font-family:Verdana, sans-serif;  }
+P { 
+   font-size:8pt; 
+   font-family:Verdana, sans-serif; 
+   margin-top:0pt;  }
+LI.kadov-P { 
+            font-size:8pt; 
+            font-family:Verdana, sans-serif;  }
+H2 { 
+    font-size:10pt; 
+    font-family:Verdana, sans-serif; 
+    margin-top:0pt; 
+    margin-bottom:10pt;  }
+LI.kadov-H2 { 
+             font-size:10pt; 
+             font-family:Verdana, sans-serif;  }
+H1 { 
+    font-size:12pt; 
+    font-family:Verdana, sans-serif;  }
+LI.kadov-H1 { 
+             font-size:12pt; 
+             font-family:Verdana, sans-serif;  }
+H3 { 
+    font-size:8pt; 
+    font-family:Verdana, sans-serif; 
+    margin-top:8pt; 
+    margin-bottom:8pt;  }
+LI.kadov-H3 { 
+             font-size:8pt; 
+             font-family:Verdana, sans-serif;  }

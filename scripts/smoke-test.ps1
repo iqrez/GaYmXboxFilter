@@ -28,8 +28,10 @@ if (-not (Test-Path $cli)) {
 }
 
 function Get-HidChildInstanceId {
-    $devices = Get-PnpDevice -PresentOnly -Class HIDClass -ErrorAction Stop
-    $match = $devices | Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' } | Select-Object -First 1
+    $devices = Get-PnpDevice -Class HIDClass -ErrorAction Stop
+    $match = $devices |
+        Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' -and ($_.Present -eq $true -or $_.Status -eq 'OK') } |
+        Select-Object -First 1
     if (-not $match) {
         throw 'The supported HID child `HID\VID_045E&PID_02FF&IG_00` is not present.'
     }

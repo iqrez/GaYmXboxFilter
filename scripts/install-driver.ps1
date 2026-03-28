@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [switch]$Build
+    [switch]$Build,
+    [switch]$FailOnRebootRequired
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,8 +23,10 @@ function Get-HidChildInstanceId {
         [string]$HardwareId = 'HID\VID_045E&PID_02FF&IG_00'
     )
 
-    $devices = Get-PnpDevice -PresentOnly -Class HIDClass -ErrorAction Stop
-    $match = $devices | Where-Object { $_.InstanceId -like "$HardwareId*" } | Select-Object -First 1
+    $devices = Get-PnpDevice -Class HIDClass -ErrorAction Stop
+    $match = $devices |
+        Where-Object { $_.InstanceId -like "$HardwareId*" -and ($_.Present -eq $true -or $_.Status -eq 'OK') } |
+        Select-Object -First 1
     if ($match) {
         return $match.InstanceId
     }
@@ -44,6 +47,53 @@ function Get-LiveStackText {
     }
 
     return ($stackOutput -join [Environment]::NewLine)
+}
+
+function Get-GaYmDriverRecords {
+    $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
+    $lines = & $pnputil /enum-drivers 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw 'pnputil /enum-drivers failed.'
+    }
+
+    $blocks = @()
+    $current = @()
+    foreach ($line in $lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            if ($current.Count -gt 0) {
+                $blocks += ,@($current)
+                $current = @()
+            }
+            continue
+        }
+        $current += $line
+    }
+
+    if ($current.Count -gt 0) {
+        $blocks += ,@($current)
+    }
+
+    $records = @()
+    foreach ($block in $blocks) {
+        $publishedName = $null
+        $originalName = $null
+        foreach ($line in $block) {
+            if ($line -match '^\s*Published Name:\s*(.+)$') {
+                $publishedName = $Matches[1].Trim()
+            } elseif ($line -match '^\s*Original Name:\s*(.+)$') {
+                $originalName = $Matches[1].Trim()
+            }
+        }
+
+        if ($publishedName -and ($originalName -ieq 'GaYmXboxFilter.inf' -or $originalName -ieq 'GaYmFilter.inf')) {
+            $records += [pscustomobject]@{
+                PublishedName = $publishedName
+                OriginalName = $originalName
+            }
+        }
+    }
+
+    return $records
 }
 
 function Get-StackDriverNames {
@@ -120,10 +170,15 @@ foreach ($path in @($lowerInf, $upperInf)) {
 }
 
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
+$driverRecordsBefore = Get-GaYmDriverRecords
 $instanceId = Get-HidChildInstanceId
 if (-not $instanceId) {
     throw 'The supported HID child `HID\VID_045E&PID_02FF&IG_00` is not currently present. Connect the controller and wait for full enumeration before installing.'
 }
+
+$preInstallStackText = Get-LiveStackText -InstanceId $instanceId
+$preInstallStackNames = Get-StackDriverNames -StackText $preInstallStackText
+$stackAlreadySupported = Test-SupportedHybridStack -StackNames $preInstallStackNames
 
 function Invoke-PnpAddDriver {
     param(
@@ -139,31 +194,42 @@ function Invoke-PnpAddDriver {
 
     Write-Host $outputText
 
-    $succeeded = $outputText -match 'Driver package added successfully' -or
-        $outputText -match 'Driver package is up-to-date on device'
+    $added = $outputText -match 'Driver package added successfully'
+    $upToDate = $outputText -match 'Driver package is up-to-date on device'
+    $succeeded = $added -or $upToDate
 
     if ($succeeded -or $exitCode -eq 0 -or $exitCode -eq 3010) {
-        return ($outputText -match 'System reboot is needed')
+        return [pscustomobject]@{
+            RebootRequired = ($outputText -match 'System reboot is needed')
+            Added = $added
+            UpToDate = $upToDate
+        }
     }
 
     throw $FailureMessage
 }
 
 Write-Host '=== Installing lower HID-child filter ==='
-$rebootRequired = Invoke-PnpAddDriver -InfPath $lowerInf -FailureMessage 'Lower filter install failed.'
+$lowerResult = Invoke-PnpAddDriver -InfPath $lowerInf -FailureMessage 'Lower filter install failed.'
+$rebootRequired = $lowerResult.RebootRequired
 
 Write-Host ''
 Write-Host '=== Installing upper HID-child filter ==='
-$rebootRequired = (Invoke-PnpAddDriver -InfPath $upperInf -FailureMessage 'Upper filter install failed. The lower filter may already be present; use scripts\uninstall-driver.ps1 if you need to roll back cleanly.') -or $rebootRequired
+$upperResult = Invoke-PnpAddDriver -InfPath $upperInf -FailureMessage 'Upper filter install failed. The lower filter may already be present; use scripts\uninstall-driver.ps1 if you need to roll back cleanly.'
+$rebootRequired = $upperResult.RebootRequired -or $rebootRequired
 
 Start-Sleep -Seconds 2
 $stackText = Get-LiveStackText -InstanceId $instanceId
 $stackNames = Get-StackDriverNames -StackText $stackText
+$driverRecordsAfter = Get-GaYmDriverRecords
 
 Write-Host ''
 Write-Host 'Install requested for the supported hybrid stack.'
 Write-Host "Target instance: $instanceId"
 Write-Host ("Normalized stack: {0}" -f ($stackNames -join ' -> '))
+if ($driverRecordsAfter.Count -gt 0) {
+    Write-Host ("GaYm packages: {0}" -f (($driverRecordsAfter | ForEach-Object { "$($_.OriginalName)=$($_.PublishedName)" }) -join ', '))
+}
 Write-Host ''
 Write-Host 'Live stack snapshot:'
 Write-Host $stackText
@@ -175,6 +241,17 @@ if (-not (Test-SupportedHybridStack -StackNames $stackNames)) {
     Write-Host 'The live stack already shows the supported hybrid path.'
 }
 
+if (-not $rebootRequired -and
+    $stackAlreadySupported -and
+    $lowerResult.UpToDate -and
+    $upperResult.UpToDate -and
+    $driverRecordsBefore.Count -eq $driverRecordsAfter.Count) {
+    Write-Host 'Install is already current; no package changes were required.'
+}
+
 if ($rebootRequired) {
     Write-Warning 'Windows reported that a reboot is required to finish applying one or both driver packages.'
+    if ($FailOnRebootRequired) {
+        throw 'Installation reached a reboot-required state. Reboot before running runtime verification.'
+    }
 }

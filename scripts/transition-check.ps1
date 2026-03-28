@@ -3,7 +3,10 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
     [switch]$BuildTools,
-    [switch]$RestartParent
+    [switch]$RestartParent,
+    [switch]$InteractiveUnplugReplug,
+    [switch]$InteractiveSleepResume,
+    [int]$TransitionTimeoutSeconds = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,8 +26,8 @@ function Assert-Administrator {
 }
 
 function Get-HidChildInstanceId {
-    $device = Get-PnpDevice -PresentOnly -Class HIDClass -ErrorAction Stop |
-        Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' } |
+    $device = Get-PnpDevice -Class HIDClass -ErrorAction Stop |
+        Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' -and ($_.Present -eq $true -or $_.Status -eq 'OK') } |
         Select-Object -First 1
 
     if ($device) {
@@ -35,8 +38,8 @@ function Get-HidChildInstanceId {
 }
 
 function Get-CompositeParentInstanceId {
-    $device = Get-PnpDevice -PresentOnly -ErrorAction Stop |
-        Where-Object { $_.InstanceId -like 'USB\VID_045E&PID_0B12*' } |
+    $device = Get-PnpDevice -ErrorAction Stop |
+        Where-Object { $_.InstanceId -like 'USB\VID_045E&PID_0B12*' -and ($_.Present -eq $true -or $_.Status -eq 'OK') } |
         Select-Object -First 1
 
     if ($device) {
@@ -67,6 +70,27 @@ function Wait-ForDevice {
     throw "$Description did not return within $TimeoutSeconds seconds."
 }
 
+function Wait-ForDeviceAbsence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Probe,
+        [Parameter(Mandatory = $true)]
+        [string]$Description,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $value = & $Probe
+        if (-not $value) {
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    throw "$Description did not disappear within $TimeoutSeconds seconds."
+}
+
 function Invoke-UpperCli {
     param(
         [Parameter(Mandatory = $true)]
@@ -86,6 +110,26 @@ function Invoke-UpperCli {
         } else {
             $env:GAYM_CONTROL_TARGET = $previousTarget
         }
+    }
+}
+
+function Assert-OverrideCleared {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    $status = & $cli status 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "GaYmCLI status failed after $Label."
+    }
+
+    $statusText = $status -join [Environment]::NewLine
+    Write-Host ''
+    Write-Host "=== Post-$Label status ==="
+    Write-Host $statusText
+    if ($statusText -notmatch 'Override:OFF') {
+        throw "Override did not clear after $Label."
     }
 }
 
@@ -155,20 +199,8 @@ try {
     if ($hidRestart.Skipped) {
         $skipped = $true
     } else {
-        $hidChild = Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration'
-
-        Write-Host ''
-        Write-Host '=== Post-HID restart status ==='
-        $status = & $cli status 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw 'GaYmCLI status failed after HID child restart.'
-        }
-
-        $statusText = $status -join [Environment]::NewLine
-        Write-Host $statusText
-        if ($statusText -notmatch 'Override:OFF') {
-            throw 'Override did not clear after HID child restart.'
-        }
+        $hidChild = Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration' -TimeoutSeconds $TransitionTimeoutSeconds
+        Assert-OverrideCleared -Label 'HID child restart'
     }
 
     if (-not $skipped -and $RestartParent) {
@@ -183,22 +215,26 @@ try {
         if ($parentRestart.Skipped) {
             $skipped = $true
         } else {
-            Wait-ForDevice -Probe ${function:Get-CompositeParentInstanceId} -Description 'Composite parent re-enumeration' | Out-Null
-            Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration after parent restart' | Out-Null
-
-            Write-Host ''
-            Write-Host '=== Post-parent restart status ==='
-            $status = & $cli status 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                throw 'GaYmCLI status failed after parent restart.'
-            }
-
-            $statusText = $status -join [Environment]::NewLine
-            Write-Host $statusText
-            if ($statusText -notmatch 'Override:OFF') {
-                throw 'Override did not clear after parent restart.'
-            }
+            Wait-ForDevice -Probe ${function:Get-CompositeParentInstanceId} -Description 'Composite parent re-enumeration' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
+            Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration after parent restart' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
+            Assert-OverrideCleared -Label 'parent restart'
         }
+    }
+
+    if ($InteractiveUnplugReplug) {
+        Write-Host ''
+        Read-Host 'Unplug the controller now, then press Enter to begin disappearance monitoring'
+        Wait-ForDeviceAbsence -Probe ${function:Get-HidChildInstanceId} -Description 'HID child after unplug' -TimeoutSeconds $TransitionTimeoutSeconds
+        Read-Host 'Replug the controller now, then press Enter to begin re-enumeration monitoring'
+        Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration after unplug/replug' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
+        Assert-OverrideCleared -Label 'unplug/replug'
+    }
+
+    if ($InteractiveSleepResume) {
+        Write-Host ''
+        Read-Host 'Put the machine to sleep now, wake it, unlock it, then press Enter to continue'
+        Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child after sleep/resume' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
+        Assert-OverrideCleared -Label 'sleep/resume'
     }
 }
 finally {

@@ -68,6 +68,21 @@ static std::vector<JoystickCandidate> EnumerateJoysticks()
     return candidates;
 }
 
+static std::vector<JoystickCandidate> WaitForJoysticks(DWORD timeoutMs)
+{
+    const DWORD start = GetTickCount();
+    do {
+        std::vector<JoystickCandidate> candidates = EnumerateJoysticks();
+        if (!candidates.empty()) {
+            return candidates;
+        }
+
+        Sleep(50);
+    } while (GetTickCount() - start < timeoutMs);
+
+    return {};
+}
+
 static void PrintJoystickList(const std::vector<JoystickCandidate>& candidates)
 {
     for (const JoystickCandidate& candidate : candidates) {
@@ -126,12 +141,25 @@ int main()
     bool overrideEnabled = false;
     auto cleanup = [&]() {
         if (overrideEnabled) {
+            HANDLE cleanupDevice = device != INVALID_HANDLE_VALUE ? device : OpenGaYmDevice(0);
             const DWORD releaseStart = GetTickCount();
             while (GetTickCount() - releaseStart < 80) {
-                InjectReport(device, &neutral);
+                if (cleanupDevice != INVALID_HANDLE_VALUE) {
+                    InjectReport(cleanupDevice, &neutral);
+                }
                 Sleep(8);
             }
-            SendIoctl(device, IOCTL_GAYM_OVERRIDE_OFF);
+
+            if (cleanupDevice != INVALID_HANDLE_VALUE) {
+                SendIoctlRaw(cleanupDevice, IOCTL_GAYM_OVERRIDE_OFF, nullptr, 0, nullptr, 0);
+                GaYmMirrorIoctlToLower(IOCTL_GAYM_OVERRIDE_OFF);
+            } else {
+                GaYmMirrorIoctlToLower(IOCTL_GAYM_OVERRIDE_OFF);
+            }
+
+            if (cleanupDevice != INVALID_HANDLE_VALUE && cleanupDevice != device) {
+                CloseHandle(cleanupDevice);
+            }
             overrideEnabled = false;
         }
         CloseHandle(device);
@@ -160,7 +188,7 @@ int main()
         Sleep(8);
     }
 
-    std::vector<JoystickCandidate> joysticks = EnumerateJoysticks();
+    std::vector<JoystickCandidate> joysticks = WaitForJoysticks(2000);
     if (joysticks.empty()) {
         std::fprintf(stderr, "ERROR: No joystick visible via joyGetPosEx after override activation.\n");
         cleanup();

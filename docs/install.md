@@ -69,6 +69,8 @@ Install order:
 
 The script installs both packages against the supported `02FF` HID child path. If Windows reports pending configuration or reboot requirements, reboot before trusting runtime results.
 
+Repeated installs are supported. If the current pair is already active and up to date, the script reports that no package changes were required instead of treating the run as an error.
+
 ## Post-Install Checklist
 
 1. both packages were added successfully
@@ -81,6 +83,14 @@ The script installs both packages against the supported `02FF` HID child path. I
 ```powershell
 .\scripts\smoke-test.ps1
 ```
+
+Full release-style validation, including uninstall/reinstall and final rollback:
+
+```powershell
+.\scripts\release-check.ps1
+```
+
+If Windows requires a reboot after the reinstall phase, `release-check.ps1` pauses intentionally, writes `out\release-check-state.json`, and exits without treating that reboot boundary as a harness failure. After reboot, rerun the same command and it resumes pass-2 validation automatically.
 
 Manual stack verification:
 

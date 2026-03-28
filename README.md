@@ -39,6 +39,8 @@ Unsupported for the cleaned MVP:
 
 The repo is now validated around the supported hybrid stack and the protocol-v1 control ABI.
 
+`release-check.ps1` now exercises install, runtime verification, uninstall, reinstall, and final rollback by default. If Windows requires a reboot after the second install pass, the script writes a resume state file, pauses at that boundary, and resumes pass-2 validation automatically on the next run after reboot.
+
 ## Repository Layout
 
 - upper driver sources: [driver.c](./driver.c), [device.c](./device.c), [devices.c](./devices.c)

@@ -13,12 +13,13 @@
 
   <PropertyGroup Label="Globals">
     <ProjectGuid>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</ProjectGuid>
-    <RootNamespace>GaYmFilter</RootNamespace>
-    <TargetName>GaYmFilter</TargetName>
+    <RootNamespace>GaYmXboxFilter</RootNamespace>
+    <TargetName>GaYmXboxFilter</TargetName>
     <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
     <DriverTargetPlatform>Desktop</DriverTargetPlatform>
     <DriverType>KMDF</DriverType>
+    <SkipPackageVerification>true</SkipPackageVerification>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -85,6 +86,7 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
+    <ClCompile Include="GuidDefinitions.c" />
     <ClCompile Include="driver.c" />
     <ClCompile Include="device.c" />
     <ClCompile Include="devices.c" />
@@ -99,7 +101,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Inf Include="GaYmFilter.inf" />
+    <Inf Include="GaYmXboxFilter.inf" />
   </ItemGroup>
 
   <ItemGroup>

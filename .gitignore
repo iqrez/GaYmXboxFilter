@@ -1,0 +1,61 @@
+# IDE
+.idea/
+.vs/
+*.user
+*.suo
+
+# Build outputs
+build/
+out/
+x64/
+GaYmXboxFilter/x64/
+
+# Driver packaging
+*.sys
+*.cat
+*.cer
+*.pfx
+*.pvk
+
+# Native build intermediates
+*.obj
+*.o
+*.idb
+*.ilk
+*.ipdb
+*.iobj
+*.tlog
+*.lastbuildstate
+*.recipe
+*.vcxproj.FileListAbsolute.txt
+
+# Debug symbols
+*.pdb
+vc140.pdb
+
+# Executables and local tools output
+*.exe
+*.dll
+
+# Logs and captures
+*.log
+cli_status*.txt
+hybrid_live_*.txt
+latest_semantic_log.txt
+semantic_sniffer.log
+trace_sniffer.log
+joy_sniffer.log
+raw_hid_sniffer.log
+
+# Archives and downloads
+*.zip
+
+# Local scratch and AI artifacts
+Modelfile
+_ollama_test_chat*.ps1
+qc
+
+# OS noise
+Thumbs.db
+Desktop.ini
+

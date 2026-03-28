@@ -1,6 +1,6 @@
 #pragma once
 /*
- * GaYmFilter - Driver entry points
+ * GaYmXboxFilter - Driver entry points.
  */
 
 #include <ntddk.h>

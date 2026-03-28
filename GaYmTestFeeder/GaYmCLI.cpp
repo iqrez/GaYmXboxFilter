@@ -20,71 +20,393 @@
 #endif
 
 #include <windows.h>
+#include <xinput.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstddef>
 #include <cstring>
 
 #include "DeviceHelper.h"
+
+#pragma comment(lib, "xinput.lib")
+
+static const char* TracePhaseName(ULONG phase)
+{
+    switch (phase) {
+    case GAYM_TRACE_PHASE_DISPATCH:     return "dispatch";
+    case GAYM_TRACE_PHASE_COMPLETION:   return "complete";
+    case GAYM_TRACE_PHASE_SEND_FAILURE: return "sendfail";
+    default:                            return "none";
+    }
+}
+
+static const char* TraceRequestTypeName(ULONG requestType)
+{
+    switch (requestType) {
+    case GAYM_TRACE_REQUEST_READ:                    return "read";
+    case GAYM_TRACE_REQUEST_WRITE:                   return "write";
+    case GAYM_TRACE_REQUEST_DEVICE_CONTROL:          return "devctl";
+    case GAYM_TRACE_REQUEST_INTERNAL_DEVICE_CONTROL: return "internal";
+    default:                                         return "unknown";
+    }
+}
+
+static void PrintTraceSample(const GAYM_TRACE_ENTRY& entry)
+{
+    if (entry.SampleLength == 0) {
+        return;
+    }
+
+    printf(" sample=");
+    for (UCHAR index = 0; index < entry.SampleLength; ++index) {
+        printf("%02X", entry.Sample[index]);
+    }
+}
+
+static void PrintHexBytes(const char* label, const UCHAR* bytes, ULONG length)
+{
+    if (length == 0) {
+        return;
+    }
+
+    printf("       %s", label);
+    for (ULONG index = 0; index < length; ++index) {
+        printf("%02X", bytes[index]);
+    }
+    printf("\n");
+}
+
+static void PrintCaptureFlags(ULONG captureFlags)
+{
+    if (captureFlags == 0) {
+        printf("none");
+        return;
+    }
+
+    bool first = true;
+    auto printFlag = [&](const char* text) {
+        if (!first) {
+            printf("|");
+        }
+        printf("%s", text);
+        first = false;
+    };
+
+    if (captureFlags & GAYM_CAPTURE_FLAG_VALID) {
+        printFlag("valid");
+    }
+    if (captureFlags & GAYM_CAPTURE_FLAG_PARTIAL) {
+        printFlag("partial");
+    }
+    if (captureFlags & GAYM_CAPTURE_FLAG_TRIGGERS_COMBINED) {
+        printFlag("combined-triggers");
+    }
+    if (captureFlags & GAYM_CAPTURE_FLAG_SOURCE_NATIVE_READ) {
+        printFlag("native-read");
+    }
+}
+
+struct CapabilityFlagName {
+    GAYM_CAPABILITY_FLAGS flag;
+    const char* name;
+};
+
+static const CapabilityFlagName kInputCapabilityNames[] = {
+    { GAYM_INPUT_CAP_FACE_BUTTONS, "face-buttons" },
+    { GAYM_INPUT_CAP_SHOULDERS, "shoulders" },
+    { GAYM_INPUT_CAP_MENU_BUTTONS, "menu-buttons" },
+    { GAYM_INPUT_CAP_GUIDE_BUTTON, "guide-button" },
+    { GAYM_INPUT_CAP_MISC_BUTTON, "misc-button" },
+    { GAYM_INPUT_CAP_STICK_CLICKS, "stick-clicks" },
+    { GAYM_INPUT_CAP_DPAD_8WAY, "dpad-8way" },
+    { GAYM_INPUT_CAP_ANALOG_TRIGGERS, "analog-triggers" },
+    { GAYM_INPUT_CAP_LEFT_STICK, "left-stick" },
+    { GAYM_INPUT_CAP_RIGHT_STICK, "right-stick" },
+    { GAYM_INPUT_CAP_TOUCH_CLICK, "touch-click" },
+    { GAYM_INPUT_CAP_TOUCH_SURFACE, "touch-surface" },
+    { GAYM_INPUT_CAP_MOTION_SENSORS, "motion-sensors" },
+};
+
+static const CapabilityFlagName kOutputCapabilityNames[] = {
+    { GAYM_OUTPUT_CAP_DUAL_MOTOR_RUMBLE, "dual-motor-rumble" },
+    { GAYM_OUTPUT_CAP_TRIGGER_RUMBLE, "trigger-rumble" },
+    { GAYM_OUTPUT_CAP_PLAYER_LIGHT, "player-light" },
+    { GAYM_OUTPUT_CAP_RGB_LIGHT, "rgb-light" },
+    { GAYM_OUTPUT_CAP_MUTE_LIGHT, "mute-light" },
+    { GAYM_OUTPUT_CAP_TRIGGER_EFFECTS, "trigger-effects" },
+    { GAYM_OUTPUT_CAP_VENDOR_EFFECTS, "vendor-effects" },
+};
+
+static void PrintCapabilityFlags(
+    const char* label,
+    GAYM_CAPABILITY_FLAGS flags,
+    const CapabilityFlagName* names,
+    size_t nameCount)
+{
+    printf("  %s0x%016llX", label, static_cast<unsigned long long>(flags));
+    if (flags == 0) {
+        printf(" none\n");
+        return;
+    }
+
+    printf(" ");
+
+    bool first = true;
+    for (size_t index = 0; index < nameCount; ++index) {
+        if ((flags & names[index].flag) == 0) {
+            continue;
+        }
+
+        if (!first) {
+            printf("|");
+        }
+
+        printf("%s", names[index].name);
+        first = false;
+    }
+
+    if (first) {
+        printf("unknown");
+    }
+
+    printf("\n");
+}
+
+static UCHAR ScaleMotorWordToByte(WORD value)
+{
+    return static_cast<UCHAR>((static_cast<ULONG>(value) * 255u + 32767u) / 65535u);
+}
+
+static void PrintOutputState(const GAYM_OUTPUT_STATE& outputState)
+{
+    printf(
+        "mask=0x%08lX low=%u high=%u lt=%u rt=%u player=%u light=%u vendor0=0x%02X\n",
+        outputState.ActiveMask,
+        outputState.LowFrequencyMotor,
+        outputState.HighFrequencyMotor,
+        outputState.LeftTriggerMotor,
+        outputState.RightTriggerMotor,
+        outputState.PlayerIndex,
+        outputState.LightMode,
+        outputState.VendorDefined[0]);
+}
+
+static void PrintReportState(const GAYM_REPORT& report)
+{
+    printf(
+        "btn0=0x%02X btn1=0x%02X dpad=%u lt=%u rt=%u lx=%d ly=%d rx=%d ry=%d\n",
+        report.Buttons[0],
+        report.Buttons[1],
+        report.DPad,
+        report.TriggerLeft,
+        report.TriggerRight,
+        report.ThumbLeftX,
+        report.ThumbLeftY,
+        report.ThumbRightX,
+        report.ThumbRightY);
+}
 
 static void PrintUsage()
 {
     printf("GaYm Controller CLI v2.0\n\n");
     printf("Usage:\n");
     printf("  GaYmCLI status                     Show all devices and state\n");
+    printf("  GaYmCLI wakecheck [seconds] [interval_ms] [device_index]\n");
+    printf("  GaYmCLI rumble <left> <right> [duration_ms] [pad_index]\n");
+    printf("  GaYmCLI vrumble <left> <right> [duration_ms] [device_index]\n");
     printf("  GaYmCLI on    [device_index]       Enable input override\n");
     printf("  GaYmCLI off   [device_index]       Disable input override\n");
     printf("  GaYmCLI jitter <min_us> <max_us>   Set timing jitter range\n");
     printf("  GaYmCLI jitter off                 Disable jitter\n");
     printf("  GaYmCLI test  [device_index]       Inject a test report\n");
+    printf("  GaYmCLI report [device_index] <btn0> <btn1> <dpad> <lt> <rt> <lx> <ly> <rx> <ry>\n");
+}
+
+static bool DeviceInfoHasField(DWORD bytesReturned, size_t fieldOffset, size_t fieldSize)
+{
+    return bytesReturned >= fieldOffset + fieldSize;
+}
+
+static void PrintDeviceStatusBlock(
+    const char* label,
+    const GaYmDevicePath& devicePath,
+    HANDLE device)
+{
+    GAYM_DEVICE_INFO info;
+    DWORD bytesReturned = 0;
+    const bool queryOk = QueryDeviceInfo(device, &info, &bytesReturned);
+    const bool hasLayoutField = queryOk &&
+        DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, QueryLayoutVersion), sizeof(info.QueryLayoutVersion));
+    const ULONG layoutVersion = hasLayoutField ? info.QueryLayoutVersion : 0;
+
+    printf("%s [%d] %ls\n", label, devicePath.index, devicePath.path.c_str());
+    if (!queryOk) {
+        printf("  query failed (error %lu)\n\n", GetLastError());
+        return;
+    }
+
+    printf("  %s  VID:%04X PID:%04X  Override:%s  Reports:%lu\n",
+        DeviceTypeName(info.DeviceType),
+        info.VendorId,
+        info.ProductId,
+        info.OverrideActive ? "ON" : "OFF",
+        info.ReportsSent);
+    printf("  Read:%lu Write:%lu DevCtl:%lu IntCtl:%lu Pending:%lu Fwd:%lu Done:%lu\n",
+        info.ReadRequestsSeen,
+        info.WriteRequestsSeen,
+        info.DeviceControlRequestsSeen,
+        info.InternalDeviceControlRequestsSeen,
+        info.PendingInputRequests,
+        info.ForwardedInputRequests,
+        info.CompletedInputRequests);
+    printf("  QueryBytes:%lu", bytesReturned);
+    if (hasLayoutField) {
+        printf(" Layout:%lu Build:0x%08lX", layoutVersion, info.DriverBuildStamp);
+    } else {
+        printf(" Layout:legacy");
+    }
+    printf("\n");
+
+    if (layoutVersion >= 4 &&
+        DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, OutputCapabilities), sizeof(info.OutputCapabilities))) {
+        PrintCapabilityFlags(
+            "InputCaps : ",
+            info.InputCapabilities,
+            kInputCapabilityNames,
+            sizeof(kInputCapabilityNames) / sizeof(kInputCapabilityNames[0]));
+        PrintCapabilityFlags(
+            "OutputCaps: ",
+            info.OutputCapabilities,
+            kOutputCapabilityNames,
+            sizeof(kOutputCapabilityNames) / sizeof(kOutputCapabilityNames[0]));
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastCompletedStatus), sizeof(info.LastCompletionInformation))) {
+        printf("  LastIoctl:0x%08lX LastStatus:0x%08lX LastInfo:%lu\n",
+            info.LastInterceptedIoctl,
+            info.LastCompletedStatus,
+            info.LastCompletionInformation);
+    } else {
+        printf("  LastIoctl:0x%08lX\n", info.LastInterceptedIoctl);
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastReadLength), sizeof(info.LastInternalOutputLength))) {
+        printf("  LastLens: read=%lu write=%lu devctl=%lu/%lu internal=%lu/%lu\n",
+            info.LastReadLength,
+            info.LastWriteLength,
+            info.LastDeviceControlInputLength,
+            info.LastDeviceControlOutputLength,
+            info.LastInternalInputLength,
+            info.LastInternalOutputLength);
+    }
+
+    if (layoutVersion >= 4 &&
+        DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastWriteSample), sizeof(info.LastWriteSample)) &&
+        (info.LastWriteLength != 0 || info.LastWriteSampleLength != 0)) {
+        printf("  OutputWrite: len=%lu sampleLen=%lu\n",
+            info.LastWriteLength,
+            info.LastWriteSampleLength);
+        PrintHexBytes("WriteSample : ", info.LastWriteSample, info.LastWriteSampleLength);
+    }
+
+    if (layoutVersion >= 5 &&
+        DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastOutputCaptureSample), sizeof(info.LastOutputCaptureSample)) &&
+        (info.LastOutputCaptureLength != 0 || info.LastOutputCaptureSampleLength != 0)) {
+        printf(
+            "  OutputCapture: ioctl=0x%08lX len=%lu sampleLen=%lu ",
+            info.LastOutputCaptureIoctl,
+            info.LastOutputCaptureLength,
+            info.LastOutputCaptureSampleLength);
+        PrintOutputState(info.LastOutputCaptureState);
+        PrintHexBytes("OutputSample : ", info.LastOutputCaptureSample, info.LastOutputCaptureSampleLength);
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastRawReadSampleLength), sizeof(info.LastNativeOverrideBytesWritten)) &&
+        (info.LastRawReadSampleLength != 0 || info.LastPatchedReadSampleLength != 0)) {
+        printf("  NativeRead: rawLen=%lu rawInfo=%lu patchedLen=%lu patchedInfo=%lu applied=%lu bytes=%lu\n",
+            info.LastRawReadSampleLength,
+            info.LastRawReadCompletionLength,
+            info.LastPatchedReadSampleLength,
+            info.LastPatchedReadCompletionLength,
+            info.LastNativeOverrideApplied,
+            info.LastNativeOverrideBytesWritten);
+        PrintHexBytes("RawSample    : ", info.LastRawReadSample, info.LastRawReadSampleLength);
+        PrintHexBytes("PatchedSample: ", info.LastPatchedReadSample, info.LastPatchedReadSampleLength);
+    }
+
+    if (layoutVersion >= 2 &&
+        DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastSemanticCaptureFlags), sizeof(info.LastSemanticCaptureReport))) {
+        printf("  SemanticCapture: flags=");
+        PrintCaptureFlags(info.LastSemanticCaptureFlags);
+        printf(" len=%lu ", info.LastSemanticCaptureLength);
+        PrintReportState(info.LastSemanticCaptureReport);
+        if (layoutVersion >= 3 &&
+            DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastSemanticCaptureIoctl), sizeof(info.LastSemanticCaptureSample))) {
+            printf("  SemanticSource: ioctl=0x%08lX len=%lu\n",
+                info.LastSemanticCaptureIoctl,
+                info.LastSemanticCaptureSampleLength);
+            PrintHexBytes("SemanticSample: ", info.LastSemanticCaptureSample, info.LastSemanticCaptureSampleLength);
+        }
+    }
+
+    if (layoutVersion >= 1 &&
+        DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, TraceCount), sizeof(info.TraceCount)) &&
+        info.TraceCount != 0) {
+        const ULONG traceCount = info.TraceCount > GAYM_TRACE_HISTORY_COUNT ? GAYM_TRACE_HISTORY_COUNT : info.TraceCount;
+        for (ULONG traceIndex = 0; traceIndex < traceCount; ++traceIndex) {
+            const GAYM_TRACE_ENTRY& entry = info.Trace[traceIndex];
+            printf("  #%lu %-8s %-8s ioctl=0x%08lX in=%lu out=%lu xfer=%lu status=0x%08lX",
+                entry.Sequence,
+                TracePhaseName(entry.Phase),
+                TraceRequestTypeName(entry.RequestType),
+                entry.IoControlCode,
+                entry.InputLength,
+                entry.OutputLength,
+                entry.TransferLength,
+                entry.Status);
+            PrintTraceSample(entry);
+            printf("\n");
+        }
+    }
+
+    printf("\n");
+}
+
+static void PrintStatusForTarget(const char* label, GaYmControlTarget target)
+{
+    auto devices = EnumerateGaYmDevicesForTarget(target);
+    if (devices.empty()) {
+        printf("%s: no endpoint found.\n\n", label);
+        return;
+    }
+
+    for (const auto& devicePath : devices) {
+        HANDLE device = OpenGaYmPathWithFallback(devicePath.path);
+        if (device == INVALID_HANDLE_VALUE) {
+            printf("%s [%d] %ls\n", label, devicePath.index, devicePath.path.c_str());
+            printf("  open failed (error %lu)\n\n", GetLastError());
+            continue;
+        }
+
+        PrintDeviceStatusBlock(label, devicePath, device);
+        CloseHandle(device);
+    }
 }
 
 static void CmdStatus()
 {
-    auto devices = EnumerateGaYmDevices();
-    if (devices.empty()) {
-        printf("No GaYmFilter devices found.\n");
-        printf("  The package may be staged but not attached to the live device stack.\n");
-        printf("  Run attach_filter.ps1 as Administrator to attach the lower filter to the USB HID stack.\n");
-        return;
-    }
-
-    printf("Found %zu device(s):\n\n", devices.size());
-
-    for (auto& d : devices) {
-        HANDLE h = CreateFileW(d.path.c_str(),
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            NULL, OPEN_EXISTING, 0, NULL);
-
-        if (h == INVALID_HANDLE_VALUE) {
-            printf("  [%d] %ls  (FAILED TO OPEN - error %lu)\n", d.index, d.path.c_str(), GetLastError());
-            continue;
-        }
-
-        GAYM_DEVICE_INFO info;
-        if (QueryDeviceInfo(h, &info)) {
-            printf("  [%d] %s  VID:%04X PID:%04X  Override:%s  Reports:%lu\n",
-                d.index,
-                DeviceTypeName(info.DeviceType),
-                info.VendorId, info.ProductId,
-                info.OverrideActive ? "ON" : "OFF",
-                info.ReportsSent);
-        } else {
-            printf("  [%d] (query failed - error %lu)\n", d.index, GetLastError());
-        }
-
-        CloseHandle(h);
-    }
+    PrintStatusForTarget("Upper", GaYmControlTarget::Upper);
+    PrintStatusForTarget("Lower", GaYmControlTarget::Lower);
 }
 
-static HANDLE OpenDevice(int argc, char* argv[], int argIdx)
+static HANDLE OpenCommandDevice(int argc, char* argv[], int argIdx)
 {
     int devIdx = 0;
     if (argIdx < argc) devIdx = atoi(argv[argIdx]);
 
-    HANDLE h = OpenGaYmDevice(devIdx);
+    HANDLE h = OpenGaYmDeviceForTarget(GaYmControlTarget::Upper, devIdx);
     if (h == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "ERROR: Cannot open device %d (error %lu). Run as Administrator.\n",
+        fprintf(stderr, "ERROR: Cannot open upper control device %d (error %lu). Run as Administrator.\n",
             devIdx, GetLastError());
     }
     return h;
@@ -92,7 +414,7 @@ static HANDLE OpenDevice(int argc, char* argv[], int argIdx)
 
 static void CmdOverride(int argc, char* argv[], bool enable)
 {
-    HANDLE h = OpenDevice(argc, argv, 2);
+    HANDLE h = OpenCommandDevice(argc, argv, 2);
     if (h == INVALID_HANDLE_VALUE) return;
 
     DWORD ioctl = enable ? IOCTL_GAYM_OVERRIDE_ON : IOCTL_GAYM_OVERRIDE_OFF;
@@ -112,9 +434,9 @@ static void CmdJitter(int argc, char* argv[])
         return;
     }
 
-    HANDLE h = OpenGaYmDevice(0);
+    HANDLE h = OpenGaYmDeviceForTarget(GaYmControlTarget::Upper, 0);
     if (h == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "ERROR: Cannot open device (error %lu).\n", GetLastError());
+        fprintf(stderr, "ERROR: Cannot open upper control device (error %lu).\n", GetLastError());
         return;
     }
 
@@ -142,7 +464,7 @@ static void CmdJitter(int argc, char* argv[])
 
 static void CmdTest(int argc, char* argv[])
 {
-    HANDLE h = OpenDevice(argc, argv, 2);
+    HANDLE h = OpenCommandDevice(argc, argv, 2);
     if (h == INVALID_HANDLE_VALUE) return;
 
     /* Enable override first */
@@ -175,6 +497,447 @@ static void CmdTest(int argc, char* argv[])
     CloseHandle(h);
 }
 
+static bool ParseLongArgument(const char* text, long minValue, long maxValue, long* value)
+{
+    char* end = nullptr;
+    long parsed = strtol(text, &end, 0);
+    if (end == text || *end != '\0' || parsed < minValue || parsed > maxValue) {
+        return false;
+    }
+
+    *value = parsed;
+    return true;
+}
+
+static bool IsExpectedTransientQueryError(DWORD error)
+{
+    switch (error) {
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_NOT_READY:
+    case ERROR_GEN_FAILURE:
+    case ERROR_DEV_NOT_EXIST:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool TryFindConnectedPad(DWORD* padIndex)
+{
+    for (DWORD index = 0; index < XUSER_MAX_COUNT; ++index) {
+        XINPUT_STATE state = {};
+        if (XInputGetState(index, &state) == ERROR_SUCCESS) {
+            *padIndex = index;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void CmdRumble(int argc, char* argv[])
+{
+    long leftMotor = 65535;
+    long rightMotor = 65535;
+    long durationMs = 750;
+    long requestedPadIndex = -1;
+    DWORD padIndex;
+    DWORD result;
+    XINPUT_STATE state = {};
+    XINPUT_VIBRATION vibration = {};
+
+    if (argc < 4) {
+        PrintUsage();
+        return;
+    }
+
+    if (!ParseLongArgument(argv[2], 0, 65535, &leftMotor)) {
+        std::fprintf(stderr, "Invalid left motor value: %s\n", argv[2]);
+        return;
+    }
+
+    if (!ParseLongArgument(argv[3], 0, 65535, &rightMotor)) {
+        std::fprintf(stderr, "Invalid right motor value: %s\n", argv[3]);
+        return;
+    }
+
+    if (argc >= 5 && !ParseLongArgument(argv[4], 1, 10000, &durationMs)) {
+        std::fprintf(stderr, "Invalid duration value: %s\n", argv[4]);
+        return;
+    }
+
+    if (argc >= 6 && !ParseLongArgument(argv[5], 0, XUSER_MAX_COUNT - 1, &requestedPadIndex)) {
+        std::fprintf(stderr, "Invalid pad index: %s\n", argv[5]);
+        return;
+    }
+
+    if (requestedPadIndex >= 0) {
+        padIndex = (DWORD)requestedPadIndex;
+        result = XInputGetState(padIndex, &state);
+        if (result != ERROR_SUCCESS) {
+            std::fprintf(stderr, "XInput pad %lu is not connected (error %lu).\n", padIndex, result);
+            return;
+        }
+    } else if (!TryFindConnectedPad(&padIndex)) {
+        std::fprintf(stderr, "No connected XInput pad found.\n");
+        return;
+    }
+
+    vibration.wLeftMotorSpeed = (WORD)leftMotor;
+    vibration.wRightMotorSpeed = (WORD)rightMotor;
+
+    result = XInputSetState(padIndex, &vibration);
+    if (result != ERROR_SUCCESS) {
+        std::fprintf(stderr, "XInputSetState failed for pad %lu (error %lu).\n", padIndex, result);
+        return;
+    }
+
+    std::printf(
+        "Rumble on pad %lu: left=%ld right=%ld duration=%ld ms\n",
+        padIndex,
+        leftMotor,
+        rightMotor,
+        durationMs);
+    Sleep((DWORD)durationMs);
+
+    std::memset(&vibration, 0, sizeof(vibration));
+    result = XInputSetState(padIndex, &vibration);
+    if (result != ERROR_SUCCESS) {
+        std::fprintf(stderr, "Failed to stop rumble on pad %lu (error %lu).\n", padIndex, result);
+        return;
+    }
+
+    std::printf("Rumble stopped. Current driver status:\n\n");
+    CmdStatus();
+}
+
+static void CmdVirtualRumble(int argc, char* argv[])
+{
+    long leftMotor = 65535;
+    long rightMotor = 65535;
+    long durationMs = 750;
+    HANDLE device;
+    GAYM_OUTPUT_STATE outputState = {};
+
+    if (argc < 4) {
+        PrintUsage();
+        return;
+    }
+
+    if (!ParseLongArgument(argv[2], 0, 65535, &leftMotor)) {
+        std::fprintf(stderr, "Invalid left motor value: %s\n", argv[2]);
+        return;
+    }
+    if (!ParseLongArgument(argv[3], 0, 65535, &rightMotor)) {
+        std::fprintf(stderr, "Invalid right motor value: %s\n", argv[3]);
+        return;
+    }
+    if (argc >= 5 && !ParseLongArgument(argv[4], 0, 60000, &durationMs)) {
+        std::fprintf(stderr, "Invalid duration value: %s\n", argv[4]);
+        return;
+    }
+
+    device = OpenCommandDevice(argc, argv, 5);
+    if (device == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    outputState.ActiveMask = GAYM_OUTPUT_UPDATE_RUMBLE;
+    outputState.LowFrequencyMotor = ScaleMotorWordToByte(static_cast<WORD>(leftMotor));
+    outputState.HighFrequencyMotor = ScaleMotorWordToByte(static_cast<WORD>(rightMotor));
+
+    if (!ApplyOutputState(device, &outputState)) {
+        std::fprintf(stderr, "ApplyOutputState failed (error %lu).\n", GetLastError());
+        CloseHandle(device);
+        return;
+    }
+
+    std::printf(
+        "Virtual rumble applied: left=%ld right=%ld duration=%ld ms\n",
+        leftMotor,
+        rightMotor,
+        durationMs);
+    Sleep(static_cast<DWORD>(durationMs));
+
+    outputState.LowFrequencyMotor = 0;
+    outputState.HighFrequencyMotor = 0;
+    if (!ApplyOutputState(device, &outputState)) {
+        std::fprintf(stderr, "Failed to stop virtual rumble (error %lu).\n", GetLastError());
+        CloseHandle(device);
+        return;
+    }
+
+    CloseHandle(device);
+    std::printf("Virtual rumble stopped. Current driver status:\n\n");
+    CmdStatus();
+}
+
+static bool IsReasonableDeviceType(ULONG deviceType)
+{
+    return deviceType >= GAYM_DEVICE_UNKNOWN && deviceType <= GAYM_DEVICE_DUALSENSE_EDGE;
+}
+
+static bool ValidateDeviceInfoSnapshot(
+    const GAYM_DEVICE_INFO& info,
+    DWORD bytesReturned,
+    char* reason,
+    size_t reasonCount)
+{
+    const bool hasLayoutField = DeviceInfoHasField(
+        bytesReturned,
+        offsetof(GAYM_DEVICE_INFO, QueryLayoutVersion),
+        sizeof(info.QueryLayoutVersion));
+
+    if (bytesReturned < sizeof(GAYM_DEVICE_TYPE) + sizeof(USHORT) * 2) {
+        std::snprintf(reason, reasonCount, "short response (%lu bytes)", bytesReturned);
+        return false;
+    }
+
+    if (!IsReasonableDeviceType(info.DeviceType)) {
+        std::snprintf(reason, reasonCount, "invalid device type %lu", info.DeviceType);
+        return false;
+    }
+
+    if (info.VendorId == 0 || info.ProductId == 0) {
+        std::snprintf(reason, reasonCount, "zero VID/PID (%04X/%04X)", info.VendorId, info.ProductId);
+        return false;
+    }
+
+    if (hasLayoutField) {
+        if (info.QueryLayoutVersion == 0 || info.QueryLayoutVersion > 5) {
+            std::snprintf(reason, reasonCount, "invalid layout version %lu", info.QueryLayoutVersion);
+            return false;
+        }
+
+        if (info.DriverBuildStamp != 0x20260327u) {
+            std::snprintf(reason, reasonCount, "unexpected build stamp 0x%08lX", info.DriverBuildStamp);
+            return false;
+        }
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, PendingInputRequests), sizeof(info.WriteRequestsSeen))) {
+        if (info.PendingInputRequests > info.QueuedInputRequests) {
+            std::snprintf(reason, reasonCount, "pending exceeds queued (%lu > %lu)",
+                info.PendingInputRequests, info.QueuedInputRequests);
+            return false;
+        }
+
+        if (info.ReadRequestsSeen > 1000000 ||
+            info.DeviceControlRequestsSeen > 1000000 ||
+            info.InternalDeviceControlRequestsSeen > 1000000 ||
+            info.WriteRequestsSeen > 1000000 ||
+            info.PendingInputRequests > 1000000 ||
+            info.QueuedInputRequests > 1000000 ||
+            info.CompletedInputRequests > 1000000 ||
+            info.ForwardedInputRequests > 1000000) {
+            std::snprintf(reason, reasonCount, "counter range looks corrupted");
+            return false;
+        }
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastReadLength), sizeof(info.LastInternalOutputLength))) {
+        if (info.LastReadLength > 65536 ||
+            info.LastWriteLength > 65536 ||
+            info.LastDeviceControlInputLength > 65536 ||
+            info.LastDeviceControlOutputLength > 65536 ||
+            info.LastInternalInputLength > 65536 ||
+            info.LastInternalOutputLength > 65536) {
+            std::snprintf(reason, reasonCount, "buffer length range looks corrupted");
+            return false;
+        }
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastWriteSample), sizeof(info.LastWriteSample))) {
+        if (info.LastWriteSampleLength > GAYM_TRACE_SAMPLE_BYTES) {
+            std::snprintf(reason, reasonCount, "write sample length looks corrupted (%lu)", info.LastWriteSampleLength);
+            return false;
+        }
+
+        if (info.LastWriteSampleLength > info.LastWriteLength) {
+            std::snprintf(reason, reasonCount, "write sample exceeds write length (%lu > %lu)",
+                info.LastWriteSampleLength, info.LastWriteLength);
+            return false;
+        }
+    }
+
+    if (DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, LastOutputCaptureSample), sizeof(info.LastOutputCaptureSample))) {
+        if (info.LastOutputCaptureSampleLength > GAYM_TRACE_SAMPLE_BYTES) {
+            std::snprintf(reason, reasonCount, "output capture sample length looks corrupted (%lu)", info.LastOutputCaptureSampleLength);
+            return false;
+        }
+
+        if (info.LastOutputCaptureSampleLength > info.LastOutputCaptureLength) {
+            std::snprintf(reason, reasonCount, "output capture sample exceeds capture length (%lu > %lu)",
+                info.LastOutputCaptureSampleLength, info.LastOutputCaptureLength);
+            return false;
+        }
+    }
+
+    reason[0] = '\0';
+    return true;
+}
+
+static void CmdWakeCheck(int argc, char* argv[])
+{
+    long durationSeconds = 45;
+    long intervalMs = 500;
+    long deviceIndex = 0;
+    DWORD startedAt = GetTickCount();
+    DWORD deadline;
+    DWORD goodSnapshots = 0;
+    DWORD transientFailures = 0;
+    DWORD invalidSnapshots = 0;
+
+    if (argc >= 3 && !ParseLongArgument(argv[2], 1, 3600, &durationSeconds)) {
+        fprintf(stderr, "Invalid seconds value: %s\n", argv[2]);
+        return;
+    }
+    if (argc >= 4 && !ParseLongArgument(argv[3], 50, 10000, &intervalMs)) {
+        fprintf(stderr, "Invalid interval value: %s\n", argv[3]);
+        return;
+    }
+    if (argc >= 5 && !ParseLongArgument(argv[4], 0, 64, &deviceIndex)) {
+        fprintf(stderr, "Invalid device index: %s\n", argv[4]);
+        return;
+    }
+
+    deadline = startedAt + static_cast<DWORD>(durationSeconds * 1000);
+
+    printf("Wake check running for %ld second(s), poll interval %ld ms, device %ld.\n",
+        durationSeconds, intervalMs, deviceIndex);
+    printf("Accepts temporary not-ready/open failures. Fails on corrupted query snapshots.\n\n");
+
+    while ((LONG)(GetTickCount() - deadline) < 0) {
+        HANDLE device = OpenGaYmDeviceForTarget(GaYmControlTarget::Upper, static_cast<int>(deviceIndex));
+        if (device == INVALID_HANDLE_VALUE) {
+            const DWORD error = GetLastError();
+            if (IsExpectedTransientQueryError(error)) {
+                ++transientFailures;
+                printf("[transient-open] error=%lu\n", error);
+                Sleep(static_cast<DWORD>(intervalMs));
+                continue;
+            }
+
+            fprintf(stderr, "[fail-open] error=%lu\n", error);
+            return;
+        }
+
+        GAYM_DEVICE_INFO info = {};
+        DWORD bytesReturned = 0;
+        if (!QueryDeviceInfo(device, &info, &bytesReturned)) {
+            const DWORD error = GetLastError();
+            CloseHandle(device);
+
+            if (IsExpectedTransientQueryError(error)) {
+                ++transientFailures;
+                printf("[transient-query] error=%lu\n", error);
+                Sleep(static_cast<DWORD>(intervalMs));
+                continue;
+            }
+
+            fprintf(stderr, "[fail-query] error=%lu\n", error);
+            return;
+        }
+
+        CloseHandle(device);
+
+        char reason[128] = {};
+        if (!ValidateDeviceInfoSnapshot(info, bytesReturned, reason, sizeof(reason))) {
+            ++invalidSnapshots;
+            fprintf(stderr,
+                "[fail-data] %s | bytes=%lu vid=%04X pid=%04X type=%lu layout=%lu build=0x%08lX "
+                "read=%lu devctl=%lu pending=%lu queued=%lu lastIoctl=0x%08lX lens=%lu/%lu/%lu/%lu/%lu/%lu\n",
+                reason,
+                bytesReturned,
+                info.VendorId,
+                info.ProductId,
+                info.DeviceType,
+                DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, QueryLayoutVersion), sizeof(info.QueryLayoutVersion)) ? info.QueryLayoutVersion : 0,
+                DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, DriverBuildStamp), sizeof(info.DriverBuildStamp)) ? info.DriverBuildStamp : 0,
+                info.ReadRequestsSeen,
+                info.DeviceControlRequestsSeen,
+                info.PendingInputRequests,
+                info.QueuedInputRequests,
+                info.LastInterceptedIoctl,
+                info.LastReadLength,
+                info.LastWriteLength,
+                info.LastDeviceControlInputLength,
+                info.LastDeviceControlOutputLength,
+                info.LastInternalInputLength,
+                info.LastInternalOutputLength);
+            return;
+        }
+
+        ++goodSnapshots;
+        printf("[ok] bytes=%lu vid=%04X pid=%04X override=%s read=%lu devctl=%lu pending=%lu queued=%lu layout=%lu\n",
+            bytesReturned,
+            info.VendorId,
+            info.ProductId,
+            info.OverrideActive ? "on" : "off",
+            info.ReadRequestsSeen,
+            info.DeviceControlRequestsSeen,
+            info.PendingInputRequests,
+            info.QueuedInputRequests,
+            DeviceInfoHasField(bytesReturned, offsetof(GAYM_DEVICE_INFO, QueryLayoutVersion), sizeof(info.QueryLayoutVersion)) ? info.QueryLayoutVersion : 0);
+
+        Sleep(static_cast<DWORD>(intervalMs));
+    }
+
+    if (goodSnapshots == 0) {
+        fprintf(stderr, "Wake check failed: no valid snapshots captured.\n");
+        return;
+    }
+
+    printf("\nWake check PASS: valid snapshots=%lu transient failures=%lu invalid snapshots=%lu\n",
+        goodSnapshots,
+        transientFailures,
+        invalidSnapshots);
+}
+
+static void CmdReport(int argc, char* argv[])
+{
+    if (argc < 12) {
+        PrintUsage();
+        return;
+    }
+
+    HANDLE h = OpenCommandDevice(argc, argv, 2);
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    long values[9] = {};
+    const long mins[9] = { 0, 0, 0, 0, 0, -32767, -32767, -32767, -32767 };
+    const long maxs[9] = { 255, 255, 15, 255, 255, 32767, 32767, 32767, 32767 };
+
+    for (int index = 0; index < 9; ++index) {
+        if (!ParseLongArgument(argv[3 + index], mins[index], maxs[index], &values[index])) {
+            std::fprintf(stderr, "Invalid report field at argument %d: %s\n", 3 + index, argv[3 + index]);
+            CloseHandle(h);
+            return;
+        }
+    }
+
+    GAYM_REPORT report = {};
+    std::memset(&report, 0, sizeof(report));
+    report.Buttons[0] = static_cast<UCHAR>(values[0]);
+    report.Buttons[1] = static_cast<UCHAR>(values[1]);
+    report.DPad = static_cast<UCHAR>(values[2]);
+    report.TriggerLeft = static_cast<UCHAR>(values[3]);
+    report.TriggerRight = static_cast<UCHAR>(values[4]);
+    report.ThumbLeftX = static_cast<SHORT>(values[5]);
+    report.ThumbLeftY = static_cast<SHORT>(values[6]);
+    report.ThumbRightX = static_cast<SHORT>(values[7]);
+    report.ThumbRightY = static_cast<SHORT>(values[8]);
+
+    if (InjectReport(h, &report)) {
+        printf("Report injected.\n");
+    } else {
+        fprintf(stderr, "InjectReport failed (error %lu).\n", GetLastError());
+    }
+
+    CloseHandle(h);
+}
+
 int main(int argc, char* argv[])
 {
     if (argc < 2) {
@@ -185,10 +948,14 @@ int main(int argc, char* argv[])
     const char* cmd = argv[1];
 
     if      (_stricmp(cmd, "status") == 0) CmdStatus();
+    else if (_stricmp(cmd, "wakecheck") == 0) CmdWakeCheck(argc, argv);
+    else if (_stricmp(cmd, "rumble") == 0) CmdRumble(argc, argv);
+    else if (_stricmp(cmd, "vrumble") == 0) CmdVirtualRumble(argc, argv);
     else if (_stricmp(cmd, "on")     == 0) CmdOverride(argc, argv, true);
     else if (_stricmp(cmd, "off")    == 0) CmdOverride(argc, argv, false);
     else if (_stricmp(cmd, "jitter") == 0) CmdJitter(argc, argv);
     else if (_stricmp(cmd, "test")   == 0) CmdTest(argc, argv);
+    else if (_stricmp(cmd, "report") == 0) CmdReport(argc, argv);
     else {
         fprintf(stderr, "Unknown command: %s\n\n", cmd);
         PrintUsage();

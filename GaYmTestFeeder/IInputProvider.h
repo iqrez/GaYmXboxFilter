@@ -19,7 +19,7 @@
 
 #include <windows.h>
 #include <winioctl.h>
-#include "../GaYmFilter/ioctl.h"
+#include "../ioctl.h"
 
 class IInputProvider {
 public:

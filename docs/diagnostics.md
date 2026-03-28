@@ -56,7 +56,7 @@ These overrides are for debugging only. They are not part of the supported opera
 
 ## Supported Diagnostic Tools
 
-Keep:
+Full maintainer tool set:
 
 - `GaYmCLI.exe`
 - `GaYmFeeder.exe`
@@ -71,6 +71,19 @@ Keep:
 - `JoySniffer.exe`
 - `DirectInputSniffer.exe`
 - `RawHidSniffer.exe`
+- `XInputMonitor.exe`
+
+Release bundle tool set:
+
+- `GaYmCLI.exe`
+- `GaYmFeeder.exe`
+- `AutoVerify.exe`
+- `FeederAutoVerify.exe`
+- `KeyboardFeederAutoVerify.exe`
+- `JoyAutoVerify.exe`
+- `HybridAutoVerify.exe`
+- `SecurityAutoVerify.exe`
+- `DirectInputAutoVerify.exe`
 - `XInputMonitor.exe`
 
 ## What To Collect For A Bug Report
@@ -104,15 +117,14 @@ If the issue is XInput-only, include:
 Verifier expectations:
 
 - `AutoVerify.exe` proves the bounded XInput-facing override path still works
-- `JoyAutoVerify.exe` is the native `joy.cpl` / WinMM regression check and currently fails on the March 27, 2026 hybrid baseline
-- `HybridAutoVerify.exe` is the combined upper/lower regression check and currently fails because the native `joy.cpl` / WinMM leg is still incomplete
+- `JoyAutoVerify.exe` is the native `joy.cpl` / WinMM regression check and currently passes on the supported hybrid stack
+- `HybridAutoVerify.exe` is the combined upper/lower regression check and currently passes on the supported hybrid stack
+- `SecurityAutoVerify.exe` proves the hardened control surface rejects restricted or malformed access as expected
 
 ## Known Baseline Limitations
 
-As of March 27, 2026:
+As of March 28, 2026:
 
-- `scripts/smoke-test.ps1` passes for the supported live hybrid stack and bounded upper-path injection
-- `scripts/smoke-test.ps1 -IncludeRuntimeVerifiers` fails at `JoyAutoVerify.exe`
-- a green `status` query does not imply that `joy.cpl` or WinMM parity is already solved
-
-Use the runtime verifiers to track native-path progress. Do not claim full native-path support until `JoyAutoVerify.exe` and `HybridAutoVerify.exe` both pass on the same live stack.
+- `scripts/release-check.ps1` passes on the supported live hybrid stack
+- `scripts/transition-check.ps1` can still report `SKIPPED` when Windows blocks in-session `pnputil /restart-device` for this HID child
+- a green `status` query still does not replace the runtime verifiers; use them to validate end-to-end behavior after stack changes

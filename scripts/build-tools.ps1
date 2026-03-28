@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Debug'
+    [string]$Configuration = 'Debug',
+    [ValidateSet('Full', 'ReleaseBundle')]
+    [string]$ToolProfile = 'Full'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,7 +42,13 @@ if (-not $vcvarsAll) {
 }
 
 New-Item -ItemType Directory -Force -Path $outRoot, $objRoot | Out-Null
-Get-ChildItem -Path $outRoot -File -Filter *.exe -ErrorAction SilentlyContinue | Remove-Item -Force
+Get-ChildItem -Path $outRoot -File -Filter *.exe -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+        Remove-Item -Path $_.FullName -Force -ErrorAction Stop
+    } catch {
+        Write-Warning "Could not remove stale tool '$($_.FullName)': $($_.Exception.Message)"
+    }
+}
 
 function Invoke-ToolBuild {
     param(
@@ -76,7 +84,7 @@ function Invoke-ToolBuild {
     }
 }
 
-$builds = @(
+$fullBuilds = @(
     @{ Output = 'GaYmCLI.exe'; Sources = @('GaYmCLI.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib') }
     @{ Output = 'GaYmFeeder.exe'; Sources = @('main.cpp', 'GuidDefinitions.cpp', 'Config.cpp', 'KeyboardProvider.cpp', 'MouseProvider.cpp', 'NetworkProvider.cpp', 'MacroProvider.cpp'); Libraries = @('setupapi.lib', 'ws2_32.lib', 'user32.lib') }
     @{ Output = 'AutoVerify.exe'; Sources = @('AutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'xinput.lib', 'hid.lib') }
@@ -95,6 +103,25 @@ $builds = @(
     @{ Output = 'XInputMonitor.exe'; Sources = @('XInputMonitor.cpp'); Libraries = @('user32.lib', 'gdi32.lib', 'xinput.lib'); CompileFlags = @('/DWIN32_LEAN_AND_MEAN'); LinkFlags = @('/SUBSYSTEM:WINDOWS') }
 )
 
+$releaseBundleOutputs = @(
+    'GaYmCLI.exe',
+    'GaYmFeeder.exe',
+    'AutoVerify.exe',
+    'FeederAutoVerify.exe',
+    'KeyboardFeederAutoVerify.exe',
+    'JoyAutoVerify.exe',
+    'HybridAutoVerify.exe',
+    'SecurityAutoVerify.exe',
+    'DirectInputAutoVerify.exe',
+    'XInputMonitor.exe'
+)
+
+$builds = if ($ToolProfile -eq 'ReleaseBundle') {
+    $fullBuilds | Where-Object { $releaseBundleOutputs -contains $_.Output }
+} else {
+    $fullBuilds
+}
+
 foreach ($build in $builds) {
     $compileFlags = @()
     $linkFlags = @()
@@ -112,3 +139,4 @@ foreach ($build in $builds) {
 
 Write-Host ''
 Write-Host "Staged tools: $outRoot"
+Write-Host "Tool profile: $ToolProfile"

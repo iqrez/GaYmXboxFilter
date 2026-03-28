@@ -33,9 +33,11 @@ Unsupported for the cleaned MVP:
 - bounded upper-path smoke test: passing
 - live supported stack detection: passing
 - XInput-facing verifier path: passing
-- native `joy.cpl` / WinMM regression path: still failing and under active investigation
+- native `joy.cpl` / WinMM regression path: passing
+- hardened control-surface negative tests: passing
+- release-check orchestration: passing
 
-The repo is consolidated around the supported hybrid stack, but native-path parity is not solved yet. Treat the current MVP as a clean engineering baseline, not as a claim that every verifier is green.
+The repo is now validated around the supported hybrid stack and the protocol-v1 control ABI.
 
 ## Repository Layout
 
@@ -59,6 +61,12 @@ Build tools:
 
 ```powershell
 .\scripts\build-tools.ps1
+```
+
+Build the release operator bundle:
+
+```powershell
+.\scripts\package-bundle.ps1
 ```
 
 Install the supported hybrid stack:

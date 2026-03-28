@@ -46,6 +46,14 @@ Curated tool output is staged to:
 out/dev/tools
 ```
 
+For an operator-facing release package, build the reduced release bundle:
+
+```powershell
+.\scripts\package-bundle.ps1
+```
+
+That stages a zip in `out/release` with only the supported driver packages, the curated release tool set, and the operator docs/scripts.
+
 ## Install The Supported Hybrid Stack
 
 ```powershell

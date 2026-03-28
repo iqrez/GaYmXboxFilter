@@ -71,6 +71,44 @@ static PDEVICE_CONTEXT GaYmAcquireActiveControlFilterContext(
     return filterCtx;
 }
 
+static NTSTATUS GaYmGetIoctlBufferLengths(
+    _In_ WDFREQUEST Request,
+    _Out_ size_t* InputLength,
+    _Out_ size_t* OutputLength)
+{
+    WDF_REQUEST_PARAMETERS parameters;
+
+    *InputLength = 0;
+    *OutputLength = 0;
+
+    WDF_REQUEST_PARAMETERS_INIT(&parameters);
+    WdfRequestGetParameters(Request, &parameters);
+
+    if (parameters.Type != WdfRequestTypeDeviceControl &&
+        parameters.Type != WdfRequestTypeDeviceControlInternal) {
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    *InputLength = parameters.Parameters.DeviceIoControl.InputBufferLength;
+    *OutputLength = parameters.Parameters.DeviceIoControl.OutputBufferLength;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS GaYmValidateNoInputBuffer(_In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+    size_t inputLength;
+    size_t outputLength;
+
+    status = GaYmGetIoctlBufferLengths(Request, &inputLength, &outputLength);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    UNREFERENCED_PARAMETER(outputLength);
+    return inputLength == 0 ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+}
+
 static PVOID GaYmMapIrpBuffer(_In_ PIRP Irp);
 static NTSTATUS GaYmRetrieveUsbUrbTransferBuffer(
     _In_ PIRP Irp,
@@ -1107,6 +1145,10 @@ VOID GaYmEvtCtlIoDeviceControl(
     switch (IoControlCode) {
 
     case IOCTL_GAYM_OVERRIDE_ON:
+        status = GaYmValidateNoInputBuffer(Request);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
         ctx->OverrideEnabled = TRUE;
         ctx->HasReport       = FALSE;
         ctx->SeqCounter      = 0;
@@ -1125,6 +1167,10 @@ VOID GaYmEvtCtlIoDeviceControl(
         break;
 
     case IOCTL_GAYM_OVERRIDE_OFF:
+        status = GaYmValidateNoInputBuffer(Request);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
         ctx->OverrideEnabled = FALSE;
         ctx->HasReport       = FALSE;
         GaYmClearPatchedTelemetry(ctx);
@@ -1140,7 +1186,10 @@ VOID GaYmEvtCtlIoDeviceControl(
         WDFREQUEST readReq;
         status = WdfRequestRetrieveInputBuffer(
             Request, sizeof(GAYM_REPORT), &inBuf, &inLen);
-        if (!NT_SUCCESS(status)) break;
+        if (!NT_SUCCESS(status) || inLen != sizeof(GAYM_REPORT)) {
+            status = NT_SUCCESS(status) ? STATUS_INVALID_BUFFER_SIZE : status;
+            break;
+        }
 
         KIRQL oldIrql;
         KeAcquireSpinLock(&ctx->ReportLock, &oldIrql);
@@ -1163,6 +1212,10 @@ VOID GaYmEvtCtlIoDeviceControl(
         GAYM_DEVICE_INFO snapshot;
         size_t outLen;
         ULONG bytesToCopy;
+        status = GaYmValidateNoInputBuffer(Request);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
         status = WdfRequestRetrieveOutputBuffer(
             Request, GAYM_DEVICE_INFO_MIN_SIZE, (PVOID*)&di, &outLen);
         if (NT_SUCCESS(status)) {
@@ -1228,7 +1281,16 @@ VOID GaYmEvtCtlIoDeviceControl(
         size_t inLen;
         status = WdfRequestRetrieveInputBuffer(
             Request, sizeof(GAYM_JITTER_CONFIG), &inBuf, &inLen);
+        if (NT_SUCCESS(status) && inLen != sizeof(GAYM_JITTER_CONFIG)) {
+            status = STATUS_INVALID_BUFFER_SIZE;
+        }
         if (NT_SUCCESS(status)) {
+            PGAYM_JITTER_CONFIG jitterConfig = (PGAYM_JITTER_CONFIG)inBuf;
+            if (jitterConfig->Enabled != FALSE &&
+                jitterConfig->MinDelayUs > jitterConfig->MaxDelayUs) {
+                status = STATUS_INVALID_PARAMETER;
+                break;
+            }
             RtlCopyMemory(&ctx->JitterConfig, inBuf, sizeof(GAYM_JITTER_CONFIG));
             GAYM_LOG_INFO("CDO: Jitter config: enabled=%d min=%lu max=%lu us",
                 ctx->JitterConfig.Enabled,
@@ -1268,9 +1330,9 @@ NTSTATUS GaYmCreateControlDevice(
 
     WDFDRIVER driver = WdfGetDriver();
 
-    /* SDDL: System=ALL, Admin=RWX, World=RWX, Restricted=RWX */
+    /* SDDL: System=ALL, Administrators=RW */
     DECLARE_CONST_UNICODE_STRING(sddl,
-        L"D:P(A;;GA;;;SY)(A;;GRGWGX;;;BA)(A;;GRGWGX;;;WD)(A;;GRGWGX;;;RC)");
+        L"D:P(A;;GA;;;SY)(A;;GRGW;;;BA)");
 
     PWDFDEVICE_INIT ctlInit = WdfControlDeviceInitAllocate(driver, &sddl);
     if (!ctlInit) {

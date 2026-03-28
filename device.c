@@ -1094,6 +1094,44 @@ static BOOLEAN GaYmIsSidebandIoctl(_In_ ULONG ioControlCode)
     }
 }
 
+static NTSTATUS GaYmGetIoctlBufferLengths(
+    _In_ WDFREQUEST request,
+    _Out_ size_t* inputLength,
+    _Out_ size_t* outputLength)
+{
+    WDF_REQUEST_PARAMETERS parameters;
+
+    *inputLength = 0;
+    *outputLength = 0;
+
+    WDF_REQUEST_PARAMETERS_INIT(&parameters);
+    WdfRequestGetParameters(request, &parameters);
+
+    if (parameters.Type != WdfRequestTypeDeviceControl &&
+        parameters.Type != WdfRequestTypeDeviceControlInternal) {
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    *inputLength = parameters.Parameters.DeviceIoControl.InputBufferLength;
+    *outputLength = parameters.Parameters.DeviceIoControl.OutputBufferLength;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS GaYmValidateNoInputBuffer(_In_ WDFREQUEST request)
+{
+    NTSTATUS status;
+    size_t inputLength;
+    size_t outputLength;
+
+    status = GaYmGetIoctlBufferLengths(request, &inputLength, &outputLength);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    UNREFERENCED_PARAMETER(outputLength);
+    return inputLength == 0 ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+}
+
 static VOID GaYmHandleSidebandIoctl(
     _In_ PDEVICE_CONTEXT ctx,
     _In_ WDFREQUEST request,
@@ -1104,6 +1142,10 @@ static VOID GaYmHandleSidebandIoctl(
 
     switch (ioControlCode) {
     case IOCTL_GAYM_OVERRIDE_ON:
+        status = GaYmValidateNoInputBuffer(request);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
         ctx->OverrideEnabled = TRUE;
         ctx->HasReport = FALSE;
         ctx->SeqCounter = 0;
@@ -1113,6 +1155,10 @@ static VOID GaYmHandleSidebandIoctl(
         break;
 
     case IOCTL_GAYM_OVERRIDE_OFF:
+        status = GaYmValidateNoInputBuffer(request);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
         ctx->OverrideEnabled = FALSE;
         ctx->HasReport = FALSE;
         GaYmDrainPendingReads(ctx, STATUS_SUCCESS);
@@ -1132,7 +1178,8 @@ static VOID GaYmHandleSidebandIoctl(
             sizeof(GAYM_REPORT),
             (PVOID*)&report,
             &reportLength);
-        if (!NT_SUCCESS(status)) {
+        if (!NT_SUCCESS(status) || reportLength != sizeof(GAYM_REPORT)) {
+            status = NT_SUCCESS(status) ? STATUS_INVALID_BUFFER_SIZE : status;
             break;
         }
 
@@ -1170,7 +1217,8 @@ static VOID GaYmHandleSidebandIoctl(
             sizeof(GAYM_OUTPUT_STATE),
             (PVOID*)&outputState,
             &outputStateLength);
-        if (!NT_SUCCESS(status)) {
+        if (!NT_SUCCESS(status) || outputStateLength != sizeof(GAYM_OUTPUT_STATE)) {
+            status = NT_SUCCESS(status) ? STATUS_INVALID_BUFFER_SIZE : status;
             break;
         }
 
@@ -1247,6 +1295,11 @@ static VOID GaYmHandleSidebandIoctl(
         size_t outLength;
         ULONG bytesToCopy;
 
+        status = GaYmValidateNoInputBuffer(request);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
         status = WdfRequestRetrieveOutputBuffer(
             request,
             GAYM_DEVICE_INFO_MIN_SIZE,
@@ -1305,7 +1358,14 @@ static VOID GaYmHandleSidebandIoctl(
             sizeof(GAYM_JITTER_CONFIG),
             (PVOID*)&jitterConfig,
             &jitterLength);
-        if (!NT_SUCCESS(status)) {
+        if (!NT_SUCCESS(status) || jitterLength != sizeof(GAYM_JITTER_CONFIG)) {
+            status = NT_SUCCESS(status) ? STATUS_INVALID_BUFFER_SIZE : status;
+            break;
+        }
+
+        if (jitterConfig->Enabled != FALSE &&
+            jitterConfig->MinDelayUs > jitterConfig->MaxDelayUs) {
+            status = STATUS_INVALID_PARAMETER;
             break;
         }
 
@@ -1665,7 +1725,7 @@ NTSTATUS GaYmCreateControlDevice(
     PCONTROL_DEVICE_CONTEXT controlContext;
     DECLARE_CONST_UNICODE_STRING(
         sddl,
-        L"D:P(A;;GA;;;SY)(A;;GRGWGX;;;BA)(A;;GRGWGX;;;WD)(A;;GRGWGX;;;RC)");
+        L"D:P(A;;GA;;;SY)(A;;GRGW;;;BA)");
 
     UNREFERENCED_PARAMETER(filterDevice);
 

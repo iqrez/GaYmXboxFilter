@@ -1,0 +1,34 @@
+GaYmXboxFilter Post-Reboot Handoff Checklist
+
+Use this checklist for the next fresh-machine validation pass.
+
+Precondition
+- If `prepare-test-machine.ps1 -EnableTestSigning` was used, reboot before doing anything else.
+- If uninstall reported pending configuration, reboot before starting the next install attempt.
+
+Validation sequence
+1. Reboot once to clear any pending uninstall or boot-policy change.
+2. Run:
+   .\scripts\install-driver.ps1 -Configuration Release
+3. If install-driver.ps1 reports that a reboot is required, check the live HID-child stack and device reboot-required state before rebooting again.
+4. If the live stack is already hybrid and the device reboot-required flag has cleared, continue on the same boot. Otherwise reboot once more.
+5. Before running smoke or release-check, verify the live HID-child stack:
+   GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+6. Only if the stack is correct, run:
+   .\scripts\smoke-test.ps1 -Configuration Release
+7. Then run:
+   .\scripts\release-check.ps1 -Configuration Release
+8. If release-check pauses at a reboot boundary, reboot and rerun the same command so it resumes.
+9. After runtime validation is green, run:
+   .\scripts\transition-check.ps1 -Configuration Release -InteractiveUnplugReplug
+10. Then run:
+   .\scripts\transition-check.ps1 -Configuration Release -InteractiveSleepResume
+11. Finish with:
+    .\scripts\uninstall-driver.ps1
+
+Decision rule
+- If the post-install reboot produces the live hybrid stack, the earlier same-boot failures were reboot deferral, not an attach defect.
+- If the post-install reboot still does not produce the hybrid stack after Windows has cleared reboot-required state, treat that as a real attach defect.
+
+Note
+- Uninstall removes the GaYm packages. It does not revert global `testsigning` boot policy.

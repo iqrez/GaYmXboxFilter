@@ -15,6 +15,7 @@ $layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
 $cli = Get-GaYmToolPath -Layout $layout -Name 'GaYmCLI.exe'
 $joyVerify = Get-GaYmToolPath -Layout $layout -Name 'JoyAutoVerify.exe'
 $hybridVerify = Get-GaYmToolPath -Layout $layout -Name 'HybridAutoVerify.exe'
+$installStatePath = New-GaYmStatePath -Layout $layout -LeafName 'install-driver-state.json'
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
 
 if ($BuildTools) {
@@ -40,6 +41,83 @@ if (-not (Test-Path $cli)) {
     }
 
     throw "GaYmCLI.exe not found at $cli. Run scripts\\build-tools.ps1 first or use -BuildTools."
+}
+
+function Get-CurrentBootTimeUtc {
+    return (Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime()
+}
+
+function Read-InstallState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return $null
+    }
+
+    return Get-Content -Path $Path -Raw | ConvertFrom-Json
+}
+
+function Remove-InstallState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (Test-Path $Path) {
+        Remove-Item -Path $Path -Force
+    }
+}
+
+function Test-DeviceRebootRequired {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InstanceId
+    )
+
+    try {
+        $property = Get-PnpDeviceProperty -InstanceId $InstanceId -KeyName 'DEVPKEY_Device_IsRebootRequired' -ErrorAction Stop
+        return ([bool]$property.Data)
+    } catch {
+        return $false
+    }
+}
+
+function Get-PendingDeclarativeFilterSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InstanceId
+    )
+
+    $filtersRoot = Join-Path 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum' $InstanceId
+    $filtersRoot = Join-Path $filtersRoot 'Filters'
+    if (-not (Test-Path $filtersRoot)) {
+        return $null
+    }
+
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($subKeyName in @('*Upper', '*Lower')) {
+        $subKeyPath = Join-Path $filtersRoot $subKeyName
+        if (-not (Test-Path $subKeyPath)) {
+            continue
+        }
+
+        $properties = Get-ItemProperty -Path $subKeyPath
+        $filterNames = $properties.PSObject.Properties |
+            Where-Object { $_.Name -notlike 'PS*' } |
+            Select-Object -ExpandProperty Name
+        if ($filterNames) {
+            $parts.Add(("{0}={1}" -f $subKeyName.TrimStart('*'), ($filterNames -join ', ')))
+        }
+    }
+
+    if ($parts.Count -eq 0) {
+        return $null
+    }
+
+    return ($parts -join '; ')
 }
 
 function Get-HidChildInstanceId {
@@ -154,6 +232,34 @@ function Test-SupportedHybridStack {
     return $true
 }
 
+$pendingInstallState = Read-InstallState -Path $installStatePath
+if ($pendingInstallState) {
+    $savedBootTimeUtc = [datetime]::Parse([string]$pendingInstallState.BootTimeUtc).ToUniversalTime()
+    $currentBootTimeUtc = Get-CurrentBootTimeUtc
+    if ($currentBootTimeUtc -gt $savedBootTimeUtc) {
+        Remove-InstallState -Path $installStatePath
+    } else {
+        $pendingInstanceId = [string]$pendingInstallState.InstanceId
+        if (-not $pendingInstanceId) {
+            $pendingInstanceId = Get-HidChildInstanceId
+        }
+
+        $pendingStackOutput = & $pnputil /enum-devices /instanceid $pendingInstanceId /stack /drivers 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $pendingStackText = $pendingStackOutput -join [Environment]::NewLine
+            $pendingStackNames = Get-StackDriverNames -StackText $pendingStackText
+            $pendingRebootRequired = Test-DeviceRebootRequired -InstanceId $pendingInstanceId
+            if ((Test-SupportedHybridStack -StackNames $pendingStackNames) -and -not $pendingRebootRequired) {
+                Remove-InstallState -Path $installStatePath
+            } else {
+                throw ("install-driver.ps1 already reported a reboot-required boundary on this boot. Reboot before running smoke-test.ps1. Pending install state: {0}" -f $installStatePath)
+            }
+        } else {
+            throw ("install-driver.ps1 already reported a reboot-required boundary on this boot. Reboot before running smoke-test.ps1. Pending install state: {0}" -f $installStatePath)
+        }
+    }
+}
+
 $instanceId = Get-HidChildInstanceId
 $stackOutput = & $pnputil /enum-devices /instanceid $instanceId /stack /drivers 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -163,6 +269,17 @@ if ($LASTEXITCODE -ne 0) {
 $stackText = $stackOutput -join [Environment]::NewLine
 $stackNames = Get-StackDriverNames -StackText $stackText
 if (-not (Test-SupportedHybridStack -StackNames $stackNames)) {
+    if (Test-DeviceRebootRequired -InstanceId $instanceId) {
+        $pendingFilterSummary = Get-PendingDeclarativeFilterSummary -InstanceId $instanceId
+        $details = if ($pendingFilterSummary) {
+            " Pending declarative filters: $pendingFilterSummary."
+        } else {
+            ''
+        }
+
+        throw "The device is still in a reboot-required state after driver install. Reboot before running runtime verification.$details`n$stackText"
+    }
+
     throw "The live stack is not the supported hybrid path for $instanceId.`n$stackText"
 }
 

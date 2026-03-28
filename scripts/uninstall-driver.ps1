@@ -3,6 +3,8 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'common-paths.ps1')
+
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -120,10 +122,16 @@ function Get-StackDriverNames {
 Assert-Administrator
 
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$layout = Get-GaYmArtifactLayout -Root $repoRoot
+$installStatePath = New-GaYmStatePath -Layout $layout -LeafName 'install-driver-state.json'
 $driverRecords = Get-GaYmDriverRecords
 $hidChild = Get-HidChildInstanceId
 
 if ($driverRecords.Count -eq 0) {
+    if (Test-Path $installStatePath) {
+        Remove-Item -Path $installStatePath -Force
+    }
     Write-Host 'No published GaYm driver packages were found.'
     return
 }
@@ -150,6 +158,9 @@ $remainingRecords = Get-GaYmDriverRecords
 
 Write-Host ''
 if ($remainingRecords.Count -eq 0) {
+    if (Test-Path $installStatePath) {
+        Remove-Item -Path $installStatePath -Force
+    }
     Write-Host 'GaYm packages removed from DriverStore.'
 } else {
     Write-Warning ("Some GaYm packages still remain in DriverStore: {0}" -f (($remainingRecords | ForEach-Object { $_.PublishedName }) -join ', '))

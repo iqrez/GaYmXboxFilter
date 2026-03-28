@@ -48,7 +48,9 @@ Full release-style orchestration:
 .\scripts\release-check.ps1
 ```
 
-If the reinstall phase reaches a reboot boundary, rerun the same command after reboot. The script auto-detects `out\release-check-state.json` and resumes the pending post-reboot validation phase instead of starting over.
+If either install phase reaches a reboot boundary, rerun the same command after reboot. The script auto-detects `out\release-check-state.json` and resumes the pending post-reboot validation phase instead of starting over.
+
+If `install-driver.ps1` already reported a reboot-required boundary on the current boot, `smoke-test.ps1` and `release-check.ps1` should stop early and point at `out\install-driver-state.json` instead of failing as if the runtime stack were healthy and final. If the live hybrid stack becomes active later on the same boot and `DEVPKEY_Device_IsRebootRequired` clears, the stale install checkpoint is removed automatically.
 
 ## Maintainer-Only Target Overrides
 
@@ -172,7 +174,7 @@ Verifier expectations:
 As of March 28, 2026:
 
 - `scripts/release-check.ps1` passes on the supported live hybrid stack
-- `scripts/release-check.ps1` can pause at the reboot boundary during reinstall, then resume pass-2 validation automatically on the next run after reboot
+- `scripts/release-check.ps1` can pause at the reboot boundary during either install pass, then resume the pending validation phase automatically on the next run after reboot
 - `scripts/transition-check.ps1` can still report `SKIPPED` when Windows blocks in-session `pnputil /restart-device` for this HID child
 - `scripts/transition-check.ps1` now supports resumable manual unplug/replug and sleep/resume checks through `out\transition-check-state.json`
 - a green `status` query still does not replace the runtime verifiers; use them to validate end-to-end behavior after stack changes

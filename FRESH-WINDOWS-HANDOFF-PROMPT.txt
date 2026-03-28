@@ -1,0 +1,84 @@
+You are validating the GaYmXboxFilter release bundle on a fresh Windows test machine as if you were a contractor with no prior context.
+
+Goal:
+Verify that the release bundle is self-sufficient on its own to prepare the machine, install the supported hybrid stack, validate runtime behavior, survive the documented reboot and transition flows, and uninstall cleanly.
+
+Bundle under test:
+C:\Users\IQRez\Desktop\GaYmXboxFilter-hybrid-known-good-20260328-transition-validated-handoff-fixed-bundle.zip
+
+How to approach the test:
+1. Extract the bundle to a clean folder.
+2. Follow only the extracted bundle contents.
+3. Treat the extracted bundle as the full source of truth. Do not rely on repo history, unstated tribal knowledge, or files outside the extracted bundle.
+4. Treat this as an operator and contractor handoff validation, not a developer deep-dive.
+
+Bundle contents that should be sufficient:
+- README.md
+- docs\install.md
+- docs\diagnostics.md
+- docs\rollback.md
+- scripts\prepare-test-machine.ps1
+- scripts\install-driver.ps1
+- scripts\smoke-test.ps1
+- scripts\release-check.ps1
+- scripts\transition-check.ps1
+- scripts\uninstall-driver.ps1
+- driver-upper\...
+- driver-lower\...
+- tools\...
+
+Required validation flow:
+1. Confirm you can identify the supported architecture and supported hardware target from the docs alone.
+2. Run:
+   .\scripts\prepare-test-machine.ps1
+3. If that script reports that testsigning must be enabled, follow the documented flow, reboot, and continue the validation after reboot.
+   This reboot is mandatory. Do not continue to install-driver.ps1, smoke-test.ps1, or release-check.ps1 until after that reboot has completed.
+4. If uninstall from any prior attempt reported pending configuration, reboot before starting the next install attempt.
+5. Install the driver stack from the extracted bundle:
+   .\scripts\install-driver.ps1
+6. If install-driver.ps1 reports that a reboot is required, reboot before any runtime verification.
+7. Before running smoke-test.ps1 or release-check.ps1, verify the live stack matches:
+   GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+8. Only if the live stack is correct, run:
+   .\scripts\smoke-test.ps1
+9. Then run:
+   .\scripts\release-check.ps1
+10. If release-check pauses at a reboot boundary, reboot and rerun the same command to confirm it resumes automatically instead of starting over.
+11. Run one manual unplug/replug transition check:
+   .\scripts\transition-check.ps1 -InteractiveUnplugReplug
+12. Run one manual sleep/resume transition check:
+    .\scripts\transition-check.ps1 -InteractiveSleepResume
+13. Uninstall the stack cleanly:
+    .\scripts\uninstall-driver.ps1
+
+Important evaluation points:
+- The scripts should work from the extracted bundle root without requiring an out\dev or out\release repo staging layout.
+- The bundle should include everything needed for operator validation, including transition-check and test-certificate bootstrap.
+- The docs should make the test-signing and reboot expectations understandable without extra explanation.
+- If testsigning was enabled during the run, any results gathered before the required reboot are invalid for runtime validation and should be reported as operator misuse, not product failure.
+- If the post-install reboot produces the live hybrid stack, earlier same-boot failures should be interpreted as reboot deferral, not an attach defect.
+- If the post-install reboot still does not produce the live hybrid stack after Windows has cleared reboot-required state, that is evidence of a real attach defect.
+
+Capture results:
+- whether each step passed, failed, or required operator judgment
+- exact commands run
+- exact failure text if anything breaks
+- any ambiguity, omission, or misleading instruction in the docs
+- any script behavior that is surprising, brittle, or inconsistent with the docs
+- whether rollback or uninstall left the machine clean
+
+Success criteria:
+- a new operator can complete the workflow without extra explanation
+- docs match actual script behavior
+- prepare-test-machine is understandable and sufficient for a fresh test machine
+- release-check resume behavior is understandable and works
+- transition-check manual flows are understandable and work
+- uninstall and rollback are clear and leave no confusing residual state
+
+Output format:
+1. Environment
+2. Commands run
+3. Results by step
+4. Docs gaps or confusing points
+5. Script issues
+6. Final verdict: PASS or FAIL

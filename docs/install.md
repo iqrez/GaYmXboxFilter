@@ -96,6 +96,8 @@ Install order:
 
 The script installs both packages against the supported `02FF` HID child path. If Windows reports pending configuration or reboot requirements, reboot before trusting runtime results.
 
+When install hits that boundary, it writes `out\install-driver-state.json`. Until the machine has actually rebooted, `smoke-test.ps1` and `release-check.ps1` should stop with a reboot-needed message instead of treating the intermediate state as a product regression. If Windows finishes activating the hybrid stack later on the same boot and clears the device reboot-required flag, those scripts clear the stale checkpoint automatically and continue.
+
 Repeated installs are supported. If the current pair is already active and up to date, the script reports that no package changes were required instead of treating the run as an error.
 
 If install reaches a reboot-required or Code 52 intermediate device state, reboot before running runtime verification. The script should warn clearly about that state, but the runtime verifiers are not expected to pass until Windows finishes the reboot-dependent policy and device reload work.
@@ -113,13 +115,13 @@ If install reaches a reboot-required or Code 52 intermediate device state, reboo
 .\scripts\smoke-test.ps1
 ```
 
-Full release-style validation, including uninstall/reinstall and final rollback:
+Full release-style validation, including install-boundary reboot handling, uninstall/reinstall, and final rollback:
 
 ```powershell
 .\scripts\release-check.ps1
 ```
 
-If Windows requires a reboot after the reinstall phase, `release-check.ps1` pauses intentionally, writes `out\release-check-state.json`, and exits without treating that reboot boundary as a harness failure. After reboot, rerun the same command and it resumes pass-2 validation automatically.
+If Windows requires a reboot after either install phase, `release-check.ps1` pauses intentionally, writes `out\release-check-state.json`, and exits without treating that reboot boundary as a harness failure. After reboot, rerun the same command and it resumes the pending validation phase automatically.
 
 Manual transition validation uses the same pattern:
 

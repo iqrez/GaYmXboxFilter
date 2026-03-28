@@ -25,10 +25,25 @@ DEFINE_GUID(GUID_DEVINTERFACE_GAYM_XINPUT_FILTER,
 #define IOCTL_GAYM_QUERY_DEVICE    ((ULONG)CTL_CODE(GAYM_IOCTL_TYPE, 0x804, METHOD_BUFFERED, FILE_READ_ACCESS))
 #define IOCTL_GAYM_SET_JITTER      ((ULONG)CTL_CODE(GAYM_IOCTL_TYPE, 0x805, METHOD_BUFFERED, FILE_WRITE_ACCESS))
 #define IOCTL_GAYM_APPLY_OUTPUT    ((ULONG)CTL_CODE(GAYM_IOCTL_TYPE, 0x806, METHOD_BUFFERED, FILE_WRITE_ACCESS))
+#define IOCTL_GAYM_QUERY_SNAPSHOT  ((ULONG)CTL_CODE(GAYM_IOCTL_TYPE, 0x807, METHOD_BUFFERED, FILE_READ_ACCESS))
+
+#ifndef GAYM_ENABLE_DEV_DIAGNOSTICS
+#if defined(_DEBUG) || defined(DBG)
+#define GAYM_ENABLE_DEV_DIAGNOSTICS 1
+#else
+#define GAYM_ENABLE_DEV_DIAGNOSTICS 0
+#endif
+#endif
 
 #define GAYM_TRACE_HISTORY_COUNT   8
 #define GAYM_TRACE_SAMPLE_BYTES    32
 #define GAYM_NATIVE_SAMPLE_BYTES   160
+
+#define GAYM_PROTOCOL_MAGIC              0x314D5947u /* 'GYM1' */
+#define GAYM_PROTOCOL_ABI_MAJOR          1u
+#define GAYM_PROTOCOL_ABI_MINOR          0u
+#define GAYM_PROTOCOL_FLAG_RESPONSE      0x00000001u
+#define GAYM_PROTOCOL_FLAG_LEGACY_BRIDGE 0x00000002u
 
 /* ─── Device type enum ─── */
 typedef enum _GAYM_DEVICE_TYPE {
@@ -85,10 +100,34 @@ typedef enum _GAYM_TRIGGER_EFFECT_MODE {
     GAYM_TRIGGER_EFFECT_VENDOR_DEFINED = 255,
 } GAYM_TRIGGER_EFFECT_MODE;
 
+typedef enum _GAYM_SNAPSHOT_KIND {
+    GAYM_SNAPSHOT_DEVICE_SUMMARY   = 1,
+    GAYM_SNAPSHOT_RUNTIME_COUNTERS = 2,
+    GAYM_SNAPSHOT_LAST_IO          = 3,
+    GAYM_SNAPSHOT_TRACE            = 4,
+    GAYM_SNAPSHOT_OUTPUT           = 5,
+} GAYM_SNAPSHOT_KIND;
+
+/* ─── Versioned snapshot protocol ─── */
+#pragma pack(push, 1)
+typedef struct _GAYM_PROTOCOL_HEADER {
+    ULONG  Magic;
+    USHORT AbiMajor;
+    USHORT AbiMinor;
+    ULONG  HeaderSize;
+    ULONG  PayloadSize;
+    ULONG  Flags;
+} GAYM_PROTOCOL_HEADER, *PGAYM_PROTOCOL_HEADER;
+
+typedef struct _GAYM_QUERY_SNAPSHOT_REQUEST {
+    GAYM_PROTOCOL_HEADER Header;
+    ULONG                SnapshotKind;
+    ULONG                Reserved;
+} GAYM_QUERY_SNAPSHOT_REQUEST, *PGAYM_QUERY_SNAPSHOT_REQUEST;
+
 /* ─── Normalized gamepad report ───
  * All input providers fill this. The kernel translates it to native HID format.
  */
-#pragma pack(push, 1)
 typedef struct _GAYM_REPORT {
     UCHAR   ReportId;          /* Ignored by kernel (auto-set per device)    */
     UCHAR   Buttons[4];       /* See GAYM_BTN_* below                       */
@@ -128,7 +167,6 @@ typedef struct _GAYM_OUTPUT_STATE {
     GAYM_TRIGGER_EFFECT RightTriggerEffect;
     UCHAR               VendorDefined[32];
 } GAYM_OUTPUT_STATE, *PGAYM_OUTPUT_STATE;
-#pragma pack(pop)
 
 typedef struct _GAYM_TRACE_ENTRY {
     ULONG Sequence;
@@ -143,6 +181,112 @@ typedef struct _GAYM_TRACE_ENTRY {
     UCHAR Sample[GAYM_TRACE_SAMPLE_BYTES];
     UCHAR Reserved[3];
 } GAYM_TRACE_ENTRY, *PGAYM_TRACE_ENTRY;
+
+typedef struct _GAYM_DEVICE_SUMMARY {
+    GAYM_DEVICE_TYPE      DeviceType;
+    USHORT                VendorId;
+    USHORT                ProductId;
+    BOOLEAN               OverrideActive;
+    UCHAR                 Reserved0[3];
+    ULONG                 ReportsSent;
+    ULONG                 DriverBuildStamp;
+    GAYM_CAPABILITY_FLAGS InputCapabilities;
+    GAYM_CAPABILITY_FLAGS OutputCapabilities;
+} GAYM_DEVICE_SUMMARY, *PGAYM_DEVICE_SUMMARY;
+
+typedef struct _GAYM_RUNTIME_COUNTERS {
+    ULONG PendingInputRequests;
+    ULONG QueuedInputRequests;
+    ULONG CompletedInputRequests;
+    ULONG ForwardedInputRequests;
+    ULONG ReadRequestsSeen;
+    ULONG WriteRequestsSeen;
+    ULONG DeviceControlRequestsSeen;
+    ULONG InternalDeviceControlRequestsSeen;
+    ULONG LastInterceptedIoctl;
+} GAYM_RUNTIME_COUNTERS, *PGAYM_RUNTIME_COUNTERS;
+
+typedef struct _GAYM_LAST_IO_SNAPSHOT {
+    ULONG       LastCompletedStatus;
+    ULONG       LastCompletionInformation;
+    ULONG       LastReadLength;
+    ULONG       LastWriteLength;
+    ULONG       LastDeviceControlInputLength;
+    ULONG       LastDeviceControlOutputLength;
+    ULONG       LastInternalInputLength;
+    ULONG       LastInternalOutputLength;
+    ULONG       LastRawReadSampleLength;
+    ULONG       LastPatchedReadSampleLength;
+    ULONG       LastRawReadCompletionLength;
+    ULONG       LastPatchedReadCompletionLength;
+    ULONG       LastNativeOverrideApplied;
+    ULONG       LastNativeOverrideBytesWritten;
+    ULONG       LastSemanticCaptureFlags;
+    ULONG       LastSemanticCaptureLength;
+    ULONG       LastSemanticCaptureIoctl;
+    ULONG       LastSemanticCaptureSampleLength;
+    UCHAR       LastRawReadSample[GAYM_NATIVE_SAMPLE_BYTES];
+    UCHAR       LastPatchedReadSample[GAYM_NATIVE_SAMPLE_BYTES];
+    UCHAR       LastSemanticCaptureSample[GAYM_NATIVE_SAMPLE_BYTES];
+    GAYM_REPORT LastSemanticCaptureReport;
+} GAYM_LAST_IO_SNAPSHOT, *PGAYM_LAST_IO_SNAPSHOT;
+
+typedef struct _GAYM_TRACE_SNAPSHOT {
+    ULONG            TraceSequence;
+    ULONG            TraceCount;
+    GAYM_TRACE_ENTRY Trace[GAYM_TRACE_HISTORY_COUNT];
+} GAYM_TRACE_SNAPSHOT, *PGAYM_TRACE_SNAPSHOT;
+
+typedef struct _GAYM_OUTPUT_SNAPSHOT {
+    ULONG             LastWriteSampleLength;
+    UCHAR             LastWriteSample[GAYM_TRACE_SAMPLE_BYTES];
+    ULONG             LastOutputCaptureIoctl;
+    ULONG             LastOutputCaptureLength;
+    ULONG             LastOutputCaptureSampleLength;
+    GAYM_OUTPUT_STATE LastOutputCaptureState;
+    UCHAR             LastOutputCaptureSample[GAYM_TRACE_SAMPLE_BYTES];
+} GAYM_OUTPUT_SNAPSHOT, *PGAYM_OUTPUT_SNAPSHOT;
+
+typedef struct _GAYM_QUERY_DEVICE_SUMMARY_RESPONSE {
+    GAYM_PROTOCOL_HEADER Header;
+    GAYM_DEVICE_SUMMARY  Payload;
+} GAYM_QUERY_DEVICE_SUMMARY_RESPONSE, *PGAYM_QUERY_DEVICE_SUMMARY_RESPONSE;
+
+typedef struct _GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE {
+    GAYM_PROTOCOL_HEADER Header;
+    GAYM_RUNTIME_COUNTERS Payload;
+} GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE, *PGAYM_QUERY_RUNTIME_COUNTERS_RESPONSE;
+
+typedef struct _GAYM_QUERY_LAST_IO_RESPONSE {
+    GAYM_PROTOCOL_HEADER Header;
+    GAYM_LAST_IO_SNAPSHOT Payload;
+} GAYM_QUERY_LAST_IO_RESPONSE, *PGAYM_QUERY_LAST_IO_RESPONSE;
+
+typedef struct _GAYM_QUERY_TRACE_RESPONSE {
+    GAYM_PROTOCOL_HEADER Header;
+    GAYM_TRACE_SNAPSHOT  Payload;
+} GAYM_QUERY_TRACE_RESPONSE, *PGAYM_QUERY_TRACE_RESPONSE;
+
+typedef struct _GAYM_QUERY_OUTPUT_RESPONSE {
+    GAYM_PROTOCOL_HEADER Header;
+    GAYM_OUTPUT_SNAPSHOT Payload;
+} GAYM_QUERY_OUTPUT_RESPONSE, *PGAYM_QUERY_OUTPUT_RESPONSE;
+#pragma pack(pop)
+
+#ifdef __cplusplus
+#define GAYM_STATIC_ASSERT(name, expr) static_assert((expr), #name)
+#else
+#define GAYM_STATIC_ASSERT(name, expr) typedef char gaym_static_assert_##name[(expr) ? 1 : -1]
+#endif
+
+GAYM_STATIC_ASSERT(protocol_header_size, sizeof(GAYM_PROTOCOL_HEADER) == 20);
+GAYM_STATIC_ASSERT(snapshot_request_size, sizeof(GAYM_QUERY_SNAPSHOT_REQUEST) == 28);
+GAYM_STATIC_ASSERT(device_summary_size, sizeof(GAYM_DEVICE_SUMMARY) == 36);
+GAYM_STATIC_ASSERT(device_summary_payload_offset, FIELD_OFFSET(GAYM_QUERY_DEVICE_SUMMARY_RESPONSE, Payload) == sizeof(GAYM_PROTOCOL_HEADER));
+GAYM_STATIC_ASSERT(runtime_counters_payload_offset, FIELD_OFFSET(GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE, Payload) == sizeof(GAYM_PROTOCOL_HEADER));
+GAYM_STATIC_ASSERT(last_io_payload_offset, FIELD_OFFSET(GAYM_QUERY_LAST_IO_RESPONSE, Payload) == sizeof(GAYM_PROTOCOL_HEADER));
+GAYM_STATIC_ASSERT(trace_payload_offset, FIELD_OFFSET(GAYM_QUERY_TRACE_RESPONSE, Payload) == sizeof(GAYM_PROTOCOL_HEADER));
+GAYM_STATIC_ASSERT(output_payload_offset, FIELD_OFFSET(GAYM_QUERY_OUTPUT_RESPONSE, Payload) == sizeof(GAYM_PROTOCOL_HEADER));
 
 /* ─── Device info (IOCTL_GAYM_QUERY_DEVICE response) ─── */
 typedef struct _GAYM_DEVICE_INFO {
@@ -199,6 +343,7 @@ typedef struct _GAYM_DEVICE_INFO {
 } GAYM_DEVICE_INFO, *PGAYM_DEVICE_INFO;
 
 #define GAYM_DEVICE_INFO_MIN_SIZE FIELD_OFFSET(GAYM_DEVICE_INFO, OverrideActive)
+#define GAYM_QUERY_SNAPSHOT_REQUEST_SIZE sizeof(GAYM_QUERY_SNAPSHOT_REQUEST)
 
 /* ─── Jitter config (IOCTL_GAYM_SET_JITTER) ─── */
 typedef struct _GAYM_JITTER_CONFIG {

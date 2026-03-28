@@ -216,8 +216,8 @@ static void PrintUsage()
     printf("  GaYmCLI vrumble <left> <right> [duration_ms] [device_index]\n");
     printf("  GaYmCLI on    [device_index]       Enable input override\n");
     printf("  GaYmCLI off   [device_index]       Disable input override\n");
-    printf("  GaYmCLI jitter <min_us> <max_us>   Set timing jitter range\n");
-    printf("  GaYmCLI jitter off                 Disable jitter\n");
+    printf("  GaYmCLI jitter <min_us> <max_us>   Set timing jitter range (dev builds only)\n");
+    printf("  GaYmCLI jitter off                 Disable jitter (dev builds only)\n");
     printf("  GaYmCLI test  [device_index]       Inject a test report\n");
     printf("  GaYmCLI report [device_index] <btn0> <btn1> <dpad> <lt> <rt> <lx> <ly> <rx> <ry>\n");
 }
@@ -227,11 +227,178 @@ static bool DeviceInfoHasField(DWORD bytesReturned, size_t fieldOffset, size_t f
     return bytesReturned >= fieldOffset + fieldSize;
 }
 
+struct GaYmProtocolStatusBundle {
+    GAYM_QUERY_DEVICE_SUMMARY_RESPONSE summary;
+    GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE runtime;
+    GAYM_QUERY_LAST_IO_RESPONSE lastIo;
+    GAYM_QUERY_TRACE_RESPONSE trace;
+    GAYM_QUERY_OUTPUT_RESPONSE output;
+    DWORD summaryBytes;
+    DWORD runtimeBytes;
+    DWORD lastIoBytes;
+    DWORD traceBytes;
+    DWORD outputBytes;
+};
+
+static void PrintTraceEntries(const GAYM_TRACE_SNAPSHOT& traceSnapshot)
+{
+    const ULONG traceCount = traceSnapshot.TraceCount > GAYM_TRACE_HISTORY_COUNT
+        ? GAYM_TRACE_HISTORY_COUNT
+        : traceSnapshot.TraceCount;
+
+    for (ULONG traceIndex = 0; traceIndex < traceCount; ++traceIndex) {
+        const GAYM_TRACE_ENTRY& entry = traceSnapshot.Trace[traceIndex];
+        printf("  #%lu %-8s %-8s ioctl=0x%08lX in=%lu out=%lu xfer=%lu status=0x%08lX",
+            entry.Sequence,
+            TracePhaseName(entry.Phase),
+            TraceRequestTypeName(entry.RequestType),
+            entry.IoControlCode,
+            entry.InputLength,
+            entry.OutputLength,
+            entry.TransferLength,
+            entry.Status);
+        PrintTraceSample(entry);
+        printf("\n");
+    }
+}
+
+static bool QueryProtocolStatusBundle(HANDLE device, GaYmProtocolStatusBundle* bundle)
+{
+    ZeroMemory(bundle, sizeof(*bundle));
+
+    return QueryDeviceSummary(device, &bundle->summary, &bundle->summaryBytes) &&
+        QueryRuntimeCounters(device, &bundle->runtime, &bundle->runtimeBytes) &&
+        QueryLastIoSnapshot(device, &bundle->lastIo, &bundle->lastIoBytes) &&
+        QueryTraceSnapshot(device, &bundle->trace, &bundle->traceBytes) &&
+        QueryOutputSnapshot(device, &bundle->output, &bundle->outputBytes);
+}
+
+static bool TryPrintProtocolDeviceStatusBlock(
+    const char* label,
+    const GaYmDevicePath& devicePath,
+    HANDLE device)
+{
+    GaYmProtocolStatusBundle bundle = {};
+    const GAYM_DEVICE_SUMMARY* summary;
+    const GAYM_RUNTIME_COUNTERS* runtime;
+    const GAYM_LAST_IO_SNAPSHOT* lastIo;
+    const GAYM_TRACE_SNAPSHOT* trace;
+    const GAYM_OUTPUT_SNAPSHOT* output;
+
+    if (!QueryProtocolStatusBundle(device, &bundle)) {
+        return false;
+    }
+
+    summary = &bundle.summary.Payload;
+    runtime = &bundle.runtime.Payload;
+    lastIo = &bundle.lastIo.Payload;
+    trace = &bundle.trace.Payload;
+    output = &bundle.output.Payload;
+
+    printf("%s [%d] %ls\n", label, devicePath.index, devicePath.path.c_str());
+    printf("  %s  VID:%04X PID:%04X  Override:%s  Reports:%lu\n",
+        DeviceTypeName(summary->DeviceType),
+        summary->VendorId,
+        summary->ProductId,
+        summary->OverrideActive ? "ON" : "OFF",
+        summary->ReportsSent);
+    printf("  Read:%lu Write:%lu DevCtl:%lu IntCtl:%lu Pending:%lu Fwd:%lu Done:%lu\n",
+        runtime->ReadRequestsSeen,
+        runtime->WriteRequestsSeen,
+        runtime->DeviceControlRequestsSeen,
+        runtime->InternalDeviceControlRequestsSeen,
+        runtime->PendingInputRequests,
+        runtime->ForwardedInputRequests,
+        runtime->CompletedInputRequests);
+    printf("  QueryBytes:%lu/%lu/%lu/%lu/%lu Layout:protocol-v%u Build:0x%08lX\n",
+        bundle.summaryBytes,
+        bundle.runtimeBytes,
+        bundle.lastIoBytes,
+        bundle.traceBytes,
+        bundle.outputBytes,
+        GAYM_PROTOCOL_ABI_MAJOR,
+        summary->DriverBuildStamp);
+
+    PrintCapabilityFlags(
+        "InputCaps : ",
+        summary->InputCapabilities,
+        kInputCapabilityNames,
+        sizeof(kInputCapabilityNames) / sizeof(kInputCapabilityNames[0]));
+    PrintCapabilityFlags(
+        "OutputCaps: ",
+        summary->OutputCapabilities,
+        kOutputCapabilityNames,
+        sizeof(kOutputCapabilityNames) / sizeof(kOutputCapabilityNames[0]));
+
+    printf("  LastIoctl:0x%08lX LastStatus:0x%08lX LastInfo:%lu\n",
+        runtime->LastInterceptedIoctl,
+        lastIo->LastCompletedStatus,
+        lastIo->LastCompletionInformation);
+    printf("  LastLens: read=%lu write=%lu devctl=%lu/%lu internal=%lu/%lu\n",
+        lastIo->LastReadLength,
+        lastIo->LastWriteLength,
+        lastIo->LastDeviceControlInputLength,
+        lastIo->LastDeviceControlOutputLength,
+        lastIo->LastInternalInputLength,
+        lastIo->LastInternalOutputLength);
+
+    if (lastIo->LastWriteLength != 0 || output->LastWriteSampleLength != 0) {
+        printf("  OutputWrite: len=%lu sampleLen=%lu\n",
+            lastIo->LastWriteLength,
+            output->LastWriteSampleLength);
+        PrintHexBytes("WriteSample : ", output->LastWriteSample, output->LastWriteSampleLength);
+    }
+
+    if (output->LastOutputCaptureLength != 0 || output->LastOutputCaptureSampleLength != 0) {
+        printf(
+            "  OutputCapture: ioctl=0x%08lX len=%lu sampleLen=%lu ",
+            output->LastOutputCaptureIoctl,
+            output->LastOutputCaptureLength,
+            output->LastOutputCaptureSampleLength);
+        PrintOutputState(output->LastOutputCaptureState);
+        PrintHexBytes("OutputSample : ", output->LastOutputCaptureSample, output->LastOutputCaptureSampleLength);
+    }
+
+    if (lastIo->LastRawReadSampleLength != 0 || lastIo->LastPatchedReadSampleLength != 0) {
+        printf("  NativeRead: rawLen=%lu rawInfo=%lu patchedLen=%lu patchedInfo=%lu applied=%lu bytes=%lu\n",
+            lastIo->LastRawReadSampleLength,
+            lastIo->LastRawReadCompletionLength,
+            lastIo->LastPatchedReadSampleLength,
+            lastIo->LastPatchedReadCompletionLength,
+            lastIo->LastNativeOverrideApplied,
+            lastIo->LastNativeOverrideBytesWritten);
+        PrintHexBytes("RawSample    : ", lastIo->LastRawReadSample, lastIo->LastRawReadSampleLength);
+        PrintHexBytes("PatchedSample: ", lastIo->LastPatchedReadSample, lastIo->LastPatchedReadSampleLength);
+    }
+
+    printf("  SemanticCapture: flags=");
+    PrintCaptureFlags(lastIo->LastSemanticCaptureFlags);
+    printf(" len=%lu ", lastIo->LastSemanticCaptureLength);
+    PrintReportState(lastIo->LastSemanticCaptureReport);
+    if (lastIo->LastSemanticCaptureSampleLength != 0) {
+        printf("  SemanticSource: ioctl=0x%08lX len=%lu\n",
+            lastIo->LastSemanticCaptureIoctl,
+            lastIo->LastSemanticCaptureSampleLength);
+        PrintHexBytes("SemanticSample: ", lastIo->LastSemanticCaptureSample, lastIo->LastSemanticCaptureSampleLength);
+    }
+
+    if (trace->TraceCount != 0) {
+        PrintTraceEntries(*trace);
+    }
+
+    printf("\n");
+    return true;
+}
+
 static void PrintDeviceStatusBlock(
     const char* label,
     const GaYmDevicePath& devicePath,
     HANDLE device)
 {
+    if (TryPrintProtocolDeviceStatusBlock(label, devicePath, device)) {
+        return;
+    }
+
     GAYM_DEVICE_INFO info;
     DWORD bytesReturned = 0;
     const bool queryOk = QueryDeviceInfo(device, &info, &bytesReturned);
@@ -457,7 +624,12 @@ static void CmdJitter(int argc, char* argv[])
     }
 
     if (!SetJitter(h, &jcfg)) {
-        fprintf(stderr, "Failed to set jitter (error %lu).\n", GetLastError());
+        const DWORD error = GetLastError();
+        if (error == ERROR_NOT_SUPPORTED) {
+            fprintf(stderr, "Jitter is not supported by this build.\n");
+        } else {
+            fprintf(stderr, "Failed to set jitter (error %lu).\n", error);
+        }
     }
     CloseHandle(h);
 }

@@ -29,6 +29,14 @@ struct JoystickCandidate {
     JoySnapshot snapshot = {};
 };
 
+struct ObservedPadState {
+    bool connected = false;
+    DWORD packetChanges = 0;
+    SHORT minLX = 0;
+    SHORT maxLX = 0;
+    WORD buttonsOr = 0;
+};
+
 static void InitNeutralReport(GAYM_REPORT* report)
 {
     std::memset(report, 0, sizeof(*report));
@@ -66,6 +74,30 @@ static bool IsInjectedTestPadState(const XINPUT_STATE& state)
 {
     return (state.Gamepad.wButtons & XINPUT_GAMEPAD_A) != 0 &&
         state.Gamepad.sThumbLX > 20000;
+}
+
+static void UpdateObservedPadState(
+    ObservedPadState* observed,
+    const XINPUT_STATE& state,
+    const XINPUT_STATE& baseline)
+{
+    if (!observed->connected) {
+        observed->connected = true;
+        observed->minLX = state.Gamepad.sThumbLX;
+        observed->maxLX = state.Gamepad.sThumbLX;
+    } else {
+        if (state.Gamepad.sThumbLX < observed->minLX) {
+            observed->minLX = state.Gamepad.sThumbLX;
+        }
+        if (state.Gamepad.sThumbLX > observed->maxLX) {
+            observed->maxLX = state.Gamepad.sThumbLX;
+        }
+    }
+
+    observed->buttonsOr |= state.Gamepad.wButtons;
+    if (state.dwPacketNumber != baseline.dwPacketNumber) {
+        observed->packetChanges++;
+    }
 }
 
 static bool WaitForQuiescentPad(DWORD index, DWORD timeoutMs, XINPUT_STATE* state)
@@ -204,26 +236,6 @@ static void PrintJoystickList(const std::vector<JoystickCandidate>& candidates)
     }
 }
 
-static bool TryObservePadState(
-    DWORD padIndex,
-    const XINPUT_STATE& baselinePad,
-    XINPUT_STATE* observedPad)
-{
-    XINPUT_STATE currentPad = {};
-    if (XInputGetState(padIndex, &currentPad) != ERROR_SUCCESS) {
-        return false;
-    }
-
-    const SHORT deltaLX = (SHORT)(currentPad.Gamepad.sThumbLX - baselinePad.Gamepad.sThumbLX);
-    if ((currentPad.Gamepad.wButtons & XINPUT_GAMEPAD_A) == 0 ||
-        deltaLX < 20000) {
-        return false;
-    }
-
-    *observedPad = currentPad;
-    return true;
-}
-
 static bool TryObserveJoystickState(
     const std::vector<JoystickCandidate>& joysticks,
     UINT* observedJoystickId,
@@ -326,7 +338,7 @@ int main()
     report.Buttons[0] = GAYM_BTN_A;
     report.ThumbLeftX = 32767;
 
-    XINPUT_STATE observedPad = {};
+    ObservedPadState observedPad = {};
     bool sawXInput = false;
 
     if (!SendIoctl(device, IOCTL_GAYM_OVERRIDE_ON)) {
@@ -353,9 +365,14 @@ int main()
             return 1;
         }
 
-        if (TryObservePadState(padIndex, baselinePad, &observedPad)) {
-            sawXInput = true;
-            break;
+        XINPUT_STATE currentPad = {};
+        if (XInputGetState(padIndex, &currentPad) == ERROR_SUCCESS) {
+            UpdateObservedPadState(&observedPad, currentPad, baselinePad);
+            if ((observedPad.buttonsOr & XINPUT_GAMEPAD_A) != 0 &&
+                observedPad.maxLX - baselinePad.Gamepad.sThumbLX >= 20000) {
+                sawXInput = true;
+                break;
+            }
         }
 
         Sleep(8);
@@ -427,17 +444,22 @@ int main()
     const bool pass = sawXInput && sawJoy && overrideOff;
 
     if (sawXInput) {
-        std::printf("Observed XInput: packet=%lu LX=%d buttons=0x%04X\n",
-            observedPad.dwPacketNumber,
-            observedPad.Gamepad.sThumbLX,
-            observedPad.Gamepad.wButtons);
+        std::printf("Observed XInput: pkt=%lu LX=[%d,%d] buttons=0x%04X\n",
+            observedPad.packetChanges,
+            observedPad.minLX,
+            observedPad.maxLX,
+            observedPad.buttonsOr);
     } else {
         XINPUT_STATE currentPad = {};
         if (XInputGetState(padIndex, &currentPad) == ERROR_SUCCESS) {
-            std::printf("Current XInput: packet=%lu LX=%d buttons=0x%04X\n",
+            std::printf("Current XInput: packet=%lu LX=%d buttons=0x%04X observedPkt=%lu observedLX=[%d,%d] observedBtns=0x%04X\n",
                 currentPad.dwPacketNumber,
                 currentPad.Gamepad.sThumbLX,
-                currentPad.Gamepad.wButtons);
+                currentPad.Gamepad.wButtons,
+                observedPad.packetChanges,
+                observedPad.minLX,
+                observedPad.maxLX,
+                observedPad.buttonsOr);
         }
     }
 

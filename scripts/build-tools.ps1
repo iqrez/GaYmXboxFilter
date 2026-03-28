@@ -84,6 +84,7 @@ $builds = @(
     @{ Output = 'KeyboardFeederAutoVerify.exe'; Sources = @('KeyboardFeederAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'xinput.lib', 'user32.lib') }
     @{ Output = 'JoyAutoVerify.exe'; Sources = @('JoyAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'winmm.lib') }
     @{ Output = 'HybridAutoVerify.exe'; Sources = @('HybridAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'winmm.lib', 'xinput.lib') }
+    @{ Output = 'SecurityAutoVerify.exe'; Sources = @('SecurityAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'advapi32.lib') }
     @{ Output = 'DirectInputAutoVerify.exe'; Sources = @('DirectInputAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'dinput8.lib', 'dxguid.lib', 'ole32.lib', 'user32.lib') }
     @{ Output = 'JoySniffer.exe'; Sources = @('JoySniffer.cpp'); Libraries = @('winmm.lib') }
     @{ Output = 'WinMmPacketSniffer.exe'; Sources = @('WinMmPacketSniffer.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'winmm.lib') }

@@ -776,6 +776,225 @@ static VOID GaYmCopyOutputCaptureSnapshot(
     KeReleaseSpinLock(&ctx->TraceLock, oldIrql);
 }
 
+static VOID GaYmBuildLegacyDeviceInfoSnapshot(
+    _In_ PDEVICE_CONTEXT ctx,
+    _Out_ PGAYM_DEVICE_INFO snapshot)
+{
+    RtlZeroMemory(snapshot, sizeof(*snapshot));
+    snapshot->DeviceType = ctx->DeviceType;
+    snapshot->VendorId = ctx->VendorId;
+    snapshot->ProductId = ctx->ProductId;
+    snapshot->OverrideActive = ctx->OverrideEnabled;
+    snapshot->ReportsSent = ctx->ReportsSent;
+    snapshot->PendingInputRequests = GaYmReadNonNegativeCounter(&ctx->PendingInputRequests);
+    snapshot->QueuedInputRequests = (ULONG)ctx->QueuedInputRequests;
+    snapshot->CompletedInputRequests = (ULONG)ctx->CompletedInputRequests;
+    snapshot->ForwardedInputRequests = (ULONG)ctx->ForwardedInputRequests;
+    snapshot->LastInterceptedIoctl = (ULONG)ctx->LastInterceptedIoctl;
+    snapshot->ReadRequestsSeen = (ULONG)ctx->ReadRequestsSeen;
+    snapshot->DeviceControlRequestsSeen = (ULONG)ctx->DeviceControlRequestsSeen;
+    snapshot->InternalDeviceControlRequestsSeen = (ULONG)ctx->InternalDeviceControlRequestsSeen;
+    snapshot->WriteRequestsSeen = (ULONG)ctx->WriteRequestsSeen;
+    snapshot->LastCompletedStatus = (ULONG)ctx->LastCompletedStatus;
+    snapshot->LastCompletionInformation = (ULONG)ctx->LastCompletionInformation;
+    snapshot->LastReadLength = (ULONG)ctx->LastReadLength;
+    snapshot->LastWriteLength = (ULONG)ctx->LastWriteLength;
+    snapshot->LastDeviceControlInputLength = (ULONG)ctx->LastDeviceControlInputLength;
+    snapshot->LastDeviceControlOutputLength = (ULONG)ctx->LastDeviceControlOutputLength;
+    snapshot->LastInternalInputLength = (ULONG)ctx->LastInternalInputLength;
+    snapshot->LastInternalOutputLength = (ULONG)ctx->LastInternalOutputLength;
+    snapshot->InputCapabilities = GaYmGetInputCapabilities(ctx->DeviceDesc);
+    snapshot->OutputCapabilities = GaYmGetOutputCapabilities(ctx->DeviceDesc);
+    GaYmCopyNativeReadSnapshot(ctx, snapshot);
+    GaYmCopyWriteSnapshot(ctx, snapshot);
+    GaYmCopyOutputCaptureSnapshot(ctx, snapshot);
+    GaYmCopyTraceSnapshot(ctx, snapshot);
+    snapshot->QueryLayoutVersion = GAYM_XINPUT_FILTER_QUERY_LAYOUT_VERSION;
+    snapshot->DriverBuildStamp = GAYM_XINPUT_FILTER_BUILD_STAMP;
+}
+
+static VOID GaYmBuildDeviceSummarySnapshot(
+    _In_ const GAYM_DEVICE_INFO* legacySnapshot,
+    _Out_ PGAYM_DEVICE_SUMMARY summary)
+{
+    RtlZeroMemory(summary, sizeof(*summary));
+    summary->DeviceType = legacySnapshot->DeviceType;
+    summary->VendorId = legacySnapshot->VendorId;
+    summary->ProductId = legacySnapshot->ProductId;
+    summary->OverrideActive = legacySnapshot->OverrideActive;
+    summary->ReportsSent = legacySnapshot->ReportsSent;
+    summary->DriverBuildStamp = legacySnapshot->DriverBuildStamp;
+    summary->InputCapabilities = legacySnapshot->InputCapabilities;
+    summary->OutputCapabilities = legacySnapshot->OutputCapabilities;
+}
+
+static VOID GaYmBuildRuntimeCountersSnapshot(
+    _In_ const GAYM_DEVICE_INFO* legacySnapshot,
+    _Out_ PGAYM_RUNTIME_COUNTERS counters)
+{
+    RtlZeroMemory(counters, sizeof(*counters));
+    counters->PendingInputRequests = legacySnapshot->PendingInputRequests;
+    counters->QueuedInputRequests = legacySnapshot->QueuedInputRequests;
+    counters->CompletedInputRequests = legacySnapshot->CompletedInputRequests;
+    counters->ForwardedInputRequests = legacySnapshot->ForwardedInputRequests;
+    counters->ReadRequestsSeen = legacySnapshot->ReadRequestsSeen;
+    counters->WriteRequestsSeen = legacySnapshot->WriteRequestsSeen;
+    counters->DeviceControlRequestsSeen = legacySnapshot->DeviceControlRequestsSeen;
+    counters->InternalDeviceControlRequestsSeen = legacySnapshot->InternalDeviceControlRequestsSeen;
+    counters->LastInterceptedIoctl = legacySnapshot->LastInterceptedIoctl;
+}
+
+static VOID GaYmBuildLastIoSnapshot(
+    _In_ const GAYM_DEVICE_INFO* legacySnapshot,
+    _Out_ PGAYM_LAST_IO_SNAPSHOT lastIo)
+{
+    RtlZeroMemory(lastIo, sizeof(*lastIo));
+    lastIo->LastCompletedStatus = legacySnapshot->LastCompletedStatus;
+    lastIo->LastCompletionInformation = legacySnapshot->LastCompletionInformation;
+    lastIo->LastReadLength = legacySnapshot->LastReadLength;
+    lastIo->LastWriteLength = legacySnapshot->LastWriteLength;
+    lastIo->LastDeviceControlInputLength = legacySnapshot->LastDeviceControlInputLength;
+    lastIo->LastDeviceControlOutputLength = legacySnapshot->LastDeviceControlOutputLength;
+    lastIo->LastInternalInputLength = legacySnapshot->LastInternalInputLength;
+    lastIo->LastInternalOutputLength = legacySnapshot->LastInternalOutputLength;
+    lastIo->LastRawReadSampleLength = legacySnapshot->LastRawReadSampleLength;
+    lastIo->LastPatchedReadSampleLength = legacySnapshot->LastPatchedReadSampleLength;
+    lastIo->LastRawReadCompletionLength = legacySnapshot->LastRawReadCompletionLength;
+    lastIo->LastPatchedReadCompletionLength = legacySnapshot->LastPatchedReadCompletionLength;
+    lastIo->LastNativeOverrideApplied = legacySnapshot->LastNativeOverrideApplied;
+    lastIo->LastNativeOverrideBytesWritten = legacySnapshot->LastNativeOverrideBytesWritten;
+    lastIo->LastSemanticCaptureFlags = legacySnapshot->LastSemanticCaptureFlags;
+    lastIo->LastSemanticCaptureLength = legacySnapshot->LastSemanticCaptureLength;
+    lastIo->LastSemanticCaptureIoctl = legacySnapshot->LastSemanticCaptureIoctl;
+    lastIo->LastSemanticCaptureSampleLength = legacySnapshot->LastSemanticCaptureSampleLength;
+    RtlCopyMemory(lastIo->LastRawReadSample, legacySnapshot->LastRawReadSample, sizeof(lastIo->LastRawReadSample));
+    RtlCopyMemory(lastIo->LastPatchedReadSample, legacySnapshot->LastPatchedReadSample, sizeof(lastIo->LastPatchedReadSample));
+    RtlCopyMemory(lastIo->LastSemanticCaptureSample, legacySnapshot->LastSemanticCaptureSample, sizeof(lastIo->LastSemanticCaptureSample));
+    lastIo->LastSemanticCaptureReport = legacySnapshot->LastSemanticCaptureReport;
+}
+
+static VOID GaYmBuildTraceSnapshot(
+    _In_ const GAYM_DEVICE_INFO* legacySnapshot,
+    _Out_ PGAYM_TRACE_SNAPSHOT traceSnapshot)
+{
+    RtlZeroMemory(traceSnapshot, sizeof(*traceSnapshot));
+    traceSnapshot->TraceSequence = legacySnapshot->TraceSequence;
+    traceSnapshot->TraceCount = legacySnapshot->TraceCount;
+    RtlCopyMemory(traceSnapshot->Trace, legacySnapshot->Trace, sizeof(traceSnapshot->Trace));
+}
+
+static VOID GaYmBuildOutputSnapshot(
+    _In_ const GAYM_DEVICE_INFO* legacySnapshot,
+    _Out_ PGAYM_OUTPUT_SNAPSHOT outputSnapshot)
+{
+    RtlZeroMemory(outputSnapshot, sizeof(*outputSnapshot));
+    outputSnapshot->LastWriteSampleLength = legacySnapshot->LastWriteSampleLength;
+    outputSnapshot->LastOutputCaptureIoctl = legacySnapshot->LastOutputCaptureIoctl;
+    outputSnapshot->LastOutputCaptureLength = legacySnapshot->LastOutputCaptureLength;
+    outputSnapshot->LastOutputCaptureSampleLength = legacySnapshot->LastOutputCaptureSampleLength;
+    RtlCopyMemory(outputSnapshot->LastWriteSample, legacySnapshot->LastWriteSample, sizeof(outputSnapshot->LastWriteSample));
+    outputSnapshot->LastOutputCaptureState = legacySnapshot->LastOutputCaptureState;
+    RtlCopyMemory(
+        outputSnapshot->LastOutputCaptureSample,
+        legacySnapshot->LastOutputCaptureSample,
+        sizeof(outputSnapshot->LastOutputCaptureSample));
+}
+
+static VOID GaYmInitializeProtocolHeader(
+    _Out_ PGAYM_PROTOCOL_HEADER header,
+    _In_ ULONG payloadSize,
+    _In_ ULONG flags)
+{
+    RtlZeroMemory(header, sizeof(*header));
+    header->Magic = GAYM_PROTOCOL_MAGIC;
+    header->AbiMajor = GAYM_PROTOCOL_ABI_MAJOR;
+    header->AbiMinor = GAYM_PROTOCOL_ABI_MINOR;
+    header->HeaderSize = sizeof(*header);
+    header->PayloadSize = payloadSize;
+    header->Flags = flags;
+}
+
+static NTSTATUS GaYmValidateSnapshotQueryRequest(
+    _In_ WDFREQUEST request,
+    _Outptr_ PGAYM_QUERY_SNAPSHOT_REQUEST* queryRequest)
+{
+    NTSTATUS status;
+    size_t requestLength;
+
+    status = WdfRequestRetrieveInputBuffer(
+        request,
+        sizeof(GAYM_QUERY_SNAPSHOT_REQUEST),
+        (PVOID*)queryRequest,
+        &requestLength);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    if (requestLength != sizeof(GAYM_QUERY_SNAPSHOT_REQUEST)) {
+        return STATUS_INVALID_BUFFER_SIZE;
+    }
+
+    if ((*queryRequest)->Header.Magic != GAYM_PROTOCOL_MAGIC) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if ((*queryRequest)->Header.AbiMajor != GAYM_PROTOCOL_ABI_MAJOR) {
+        return STATUS_REVISION_MISMATCH;
+    }
+
+    if ((*queryRequest)->Header.AbiMinor > GAYM_PROTOCOL_ABI_MINOR) {
+        return STATUS_REVISION_MISMATCH;
+    }
+
+    if ((*queryRequest)->Header.HeaderSize != sizeof(GAYM_PROTOCOL_HEADER) ||
+        (*queryRequest)->Header.PayloadSize != sizeof(GAYM_QUERY_SNAPSHOT_REQUEST) - sizeof(GAYM_PROTOCOL_HEADER) ||
+        (*queryRequest)->Header.Flags != 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    switch ((*queryRequest)->SnapshotKind) {
+    case GAYM_SNAPSHOT_DEVICE_SUMMARY:
+    case GAYM_SNAPSHOT_RUNTIME_COUNTERS:
+    case GAYM_SNAPSHOT_LAST_IO:
+    case GAYM_SNAPSHOT_TRACE:
+    case GAYM_SNAPSHOT_OUTPUT:
+        return STATUS_SUCCESS;
+    default:
+        return STATUS_NOT_SUPPORTED;
+    }
+}
+
+static NTSTATUS GaYmWriteSnapshotResponse(
+    _In_ WDFREQUEST request,
+    _In_reads_bytes_(payloadSize) const VOID* payload,
+    _In_ ULONG payloadSize,
+    _In_ ULONG flags,
+    _Out_ PULONG_PTR information)
+{
+    NTSTATUS status;
+    PUCHAR outputBuffer;
+    size_t outLength;
+    PGAYM_PROTOCOL_HEADER header;
+
+    status = WdfRequestRetrieveOutputBuffer(
+        request,
+        sizeof(GAYM_PROTOCOL_HEADER) + payloadSize,
+        (PVOID*)&outputBuffer,
+        &outLength);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    header = (PGAYM_PROTOCOL_HEADER)outputBuffer;
+    GaYmInitializeProtocolHeader(header, payloadSize, flags | GAYM_PROTOCOL_FLAG_RESPONSE);
+    if (payloadSize != 0) {
+        RtlCopyMemory(outputBuffer + sizeof(*header), payload, payloadSize);
+    }
+
+    *information = sizeof(*header) + payloadSize;
+    return STATUS_SUCCESS;
+}
+
 static VOID GaYmUpdateLastWriteSample(
     _In_ PDEVICE_CONTEXT ctx,
     _In_reads_bytes_opt_(sampleLength) const UCHAR* sample,
@@ -1086,6 +1305,7 @@ static BOOLEAN GaYmIsSidebandIoctl(_In_ ULONG ioControlCode)
     case IOCTL_GAYM_OVERRIDE_OFF:
     case IOCTL_GAYM_INJECT_REPORT:
     case IOCTL_GAYM_QUERY_DEVICE:
+    case IOCTL_GAYM_QUERY_SNAPSHOT:
     case IOCTL_GAYM_SET_JITTER:
     case IOCTL_GAYM_APPLY_OUTPUT:
         return TRUE;
@@ -1309,37 +1529,7 @@ static VOID GaYmHandleSidebandIoctl(
             break;
         }
 
-        RtlZeroMemory(&snapshot, sizeof(snapshot));
-        snapshot.DeviceType = ctx->DeviceType;
-        snapshot.VendorId = ctx->VendorId;
-        snapshot.ProductId = ctx->ProductId;
-        snapshot.OverrideActive = ctx->OverrideEnabled;
-        snapshot.ReportsSent = ctx->ReportsSent;
-        snapshot.PendingInputRequests = GaYmReadNonNegativeCounter(&ctx->PendingInputRequests);
-        snapshot.QueuedInputRequests = (ULONG)ctx->QueuedInputRequests;
-        snapshot.CompletedInputRequests = (ULONG)ctx->CompletedInputRequests;
-        snapshot.ForwardedInputRequests = (ULONG)ctx->ForwardedInputRequests;
-        snapshot.LastInterceptedIoctl = (ULONG)ctx->LastInterceptedIoctl;
-        snapshot.ReadRequestsSeen = (ULONG)ctx->ReadRequestsSeen;
-        snapshot.DeviceControlRequestsSeen = (ULONG)ctx->DeviceControlRequestsSeen;
-        snapshot.InternalDeviceControlRequestsSeen = (ULONG)ctx->InternalDeviceControlRequestsSeen;
-        snapshot.WriteRequestsSeen = (ULONG)ctx->WriteRequestsSeen;
-        snapshot.LastCompletedStatus = (ULONG)ctx->LastCompletedStatus;
-        snapshot.LastCompletionInformation = (ULONG)ctx->LastCompletionInformation;
-        snapshot.LastReadLength = (ULONG)ctx->LastReadLength;
-        snapshot.LastWriteLength = (ULONG)ctx->LastWriteLength;
-        snapshot.LastDeviceControlInputLength = (ULONG)ctx->LastDeviceControlInputLength;
-        snapshot.LastDeviceControlOutputLength = (ULONG)ctx->LastDeviceControlOutputLength;
-        snapshot.LastInternalInputLength = (ULONG)ctx->LastInternalInputLength;
-        snapshot.LastInternalOutputLength = (ULONG)ctx->LastInternalOutputLength;
-        snapshot.InputCapabilities = GaYmGetInputCapabilities(ctx->DeviceDesc);
-        snapshot.OutputCapabilities = GaYmGetOutputCapabilities(ctx->DeviceDesc);
-        GaYmCopyNativeReadSnapshot(ctx, &snapshot);
-        GaYmCopyWriteSnapshot(ctx, &snapshot);
-        GaYmCopyOutputCaptureSnapshot(ctx, &snapshot);
-        GaYmCopyTraceSnapshot(ctx, &snapshot);
-        snapshot.QueryLayoutVersion = GAYM_XINPUT_FILTER_QUERY_LAYOUT_VERSION;
-        snapshot.DriverBuildStamp = GAYM_XINPUT_FILTER_BUILD_STAMP;
+        GaYmBuildLegacyDeviceInfoSnapshot(ctx, &snapshot);
 
         bytesToCopy = GaYmMinUlong((ULONG)outLength, (ULONG)sizeof(snapshot));
         RtlCopyMemory(deviceInfo, &snapshot, bytesToCopy);
@@ -1348,8 +1538,94 @@ static VOID GaYmHandleSidebandIoctl(
         break;
     }
 
+    case IOCTL_GAYM_QUERY_SNAPSHOT:
+    {
+        PGAYM_QUERY_SNAPSHOT_REQUEST queryRequest;
+        GAYM_DEVICE_INFO legacySnapshot;
+
+        status = GaYmValidateSnapshotQueryRequest(request, &queryRequest);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
+        GaYmBuildLegacyDeviceInfoSnapshot(ctx, &legacySnapshot);
+
+        switch (queryRequest->SnapshotKind) {
+        case GAYM_SNAPSHOT_DEVICE_SUMMARY:
+        {
+            GAYM_DEVICE_SUMMARY payload;
+            GaYmBuildDeviceSummarySnapshot(&legacySnapshot, &payload);
+            status = GaYmWriteSnapshotResponse(
+                request,
+                &payload,
+                sizeof(payload),
+                GAYM_PROTOCOL_FLAG_LEGACY_BRIDGE,
+                &info);
+            break;
+        }
+
+        case GAYM_SNAPSHOT_RUNTIME_COUNTERS:
+        {
+            GAYM_RUNTIME_COUNTERS payload;
+            GaYmBuildRuntimeCountersSnapshot(&legacySnapshot, &payload);
+            status = GaYmWriteSnapshotResponse(
+                request,
+                &payload,
+                sizeof(payload),
+                GAYM_PROTOCOL_FLAG_LEGACY_BRIDGE,
+                &info);
+            break;
+        }
+
+        case GAYM_SNAPSHOT_LAST_IO:
+        {
+            GAYM_LAST_IO_SNAPSHOT payload;
+            GaYmBuildLastIoSnapshot(&legacySnapshot, &payload);
+            status = GaYmWriteSnapshotResponse(
+                request,
+                &payload,
+                sizeof(payload),
+                GAYM_PROTOCOL_FLAG_LEGACY_BRIDGE,
+                &info);
+            break;
+        }
+
+        case GAYM_SNAPSHOT_TRACE:
+        {
+            GAYM_TRACE_SNAPSHOT payload;
+            GaYmBuildTraceSnapshot(&legacySnapshot, &payload);
+            status = GaYmWriteSnapshotResponse(
+                request,
+                &payload,
+                sizeof(payload),
+                GAYM_PROTOCOL_FLAG_LEGACY_BRIDGE,
+                &info);
+            break;
+        }
+
+        case GAYM_SNAPSHOT_OUTPUT:
+        {
+            GAYM_OUTPUT_SNAPSHOT payload;
+            GaYmBuildOutputSnapshot(&legacySnapshot, &payload);
+            status = GaYmWriteSnapshotResponse(
+                request,
+                &payload,
+                sizeof(payload),
+                GAYM_PROTOCOL_FLAG_LEGACY_BRIDGE,
+                &info);
+            break;
+        }
+
+        default:
+            status = STATUS_NOT_SUPPORTED;
+            break;
+        }
+        break;
+    }
+
     case IOCTL_GAYM_SET_JITTER:
     {
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
         PGAYM_JITTER_CONFIG jitterConfig;
         size_t jitterLength;
 
@@ -1376,6 +1652,9 @@ static VOID GaYmHandleSidebandIoctl(
             ctx->JitterConfig.MinDelayUs,
             ctx->JitterConfig.MaxDelayUs);
         status = STATUS_SUCCESS;
+#else
+        status = STATUS_NOT_SUPPORTED;
+#endif
         break;
     }
 

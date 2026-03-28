@@ -234,6 +234,51 @@ inline HANDLE OpenGaYmPathWithFallback(const std::wstring& path)
         NULL, OPEN_EXISTING, 0, NULL);
 }
 
+inline HANDLE OpenGaYmPathWithFallbackAccess(const std::wstring& path, DWORD desiredAccess)
+{
+    HANDLE h = CreateFileW(
+        path.c_str(),
+        desiredAccess,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        return h;
+    }
+
+    if (_wcsicmp(path.c_str(), GaYmPrimaryControlDevicePath()) == 0 ||
+        _wcsicmp(path.c_str(), GaYmSecondaryControlDevicePath()) == 0 ||
+        _wcsicmp(path.c_str(), GaYmLegacyControlDevicePath()) == 0) {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    h = CreateFileW(
+        GaYmPreferredControlDevicePath(),
+        desiredAccess,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        return h;
+    }
+
+    h = CreateFileW(
+        GaYmFallbackControlDevicePath(),
+        desiredAccess,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        return h;
+    }
+
+    return CreateFileW(
+        GaYmLegacyControlDevicePath(),
+        desiredAccess,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+}
+
 /* Enumerate all present GaYmFilter device interfaces */
 inline std::vector<GaYmDevicePath> EnumerateGaYmDevicesForTarget(GaYmControlTarget targetPreference)
 {
@@ -317,6 +362,19 @@ inline HANDLE OpenGaYmDeviceForTarget(GaYmControlTarget target, int index = 0)
     return OpenGaYmPathWithFallback(devices[index].path);
 }
 
+inline HANDLE OpenGaYmDeviceForTargetWithAccess(
+    GaYmControlTarget target,
+    DWORD desiredAccess,
+    int index = 0)
+{
+    auto devices = EnumerateGaYmDevicesForTarget(target);
+    if (index < 0 || index >= (int)devices.size()) {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    return OpenGaYmPathWithFallbackAccess(devices[index].path, desiredAccess);
+}
+
 /* Open a GaYmFilter device by index (0 = first). Returns INVALID_HANDLE_VALUE on failure. */
 inline HANDLE OpenGaYmDevice(int index = 0)
 {
@@ -328,6 +386,15 @@ inline HANDLE OpenGaYmControlDevicePathStrict(const wchar_t* path)
     return CreateFileW(
         path,
         GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL, OPEN_EXISTING, 0, NULL);
+}
+
+inline HANDLE OpenGaYmControlDevicePathStrictWithAccess(const wchar_t* path, DWORD desiredAccess)
+{
+    return CreateFileW(
+        path,
+        desiredAccess,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         NULL, OPEN_EXISTING, 0, NULL);
 }
@@ -355,6 +422,144 @@ inline bool SendIoctlRaw(
         outputBytes,
         bytesReturned,
         NULL) != FALSE;
+}
+
+inline void InitializeGaYmProtocolHeader(
+    GAYM_PROTOCOL_HEADER* header,
+    ULONG payloadSize,
+    ULONG flags = 0)
+{
+    ZeroMemory(header, sizeof(*header));
+    header->Magic = GAYM_PROTOCOL_MAGIC;
+    header->AbiMajor = GAYM_PROTOCOL_ABI_MAJOR;
+    header->AbiMinor = GAYM_PROTOCOL_ABI_MINOR;
+    header->HeaderSize = sizeof(*header);
+    header->PayloadSize = payloadSize;
+    header->Flags = flags;
+}
+
+inline bool ValidateGaYmProtocolHeader(
+    const GAYM_PROTOCOL_HEADER& header,
+    ULONG expectedPayloadSize,
+    DWORD bytesReturned)
+{
+    const DWORD minimumBytes = static_cast<DWORD>(sizeof(GAYM_PROTOCOL_HEADER) + expectedPayloadSize);
+
+    if (bytesReturned < minimumBytes) {
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return false;
+    }
+
+    if (header.Magic != GAYM_PROTOCOL_MAGIC ||
+        header.AbiMajor != GAYM_PROTOCOL_ABI_MAJOR ||
+        header.AbiMinor > GAYM_PROTOCOL_ABI_MINOR ||
+        header.HeaderSize != sizeof(GAYM_PROTOCOL_HEADER) ||
+        header.PayloadSize != expectedPayloadSize ||
+        (header.Flags & GAYM_PROTOCOL_FLAG_RESPONSE) == 0) {
+        SetLastError(ERROR_REVISION_MISMATCH);
+        return false;
+    }
+
+    return true;
+}
+
+template <typename TResponse>
+inline bool QuerySnapshotResponse(
+    HANDLE hDevice,
+    ULONG snapshotKind,
+    TResponse* response,
+    DWORD* bytesReturned = nullptr)
+{
+    GAYM_QUERY_SNAPSHOT_REQUEST request = {};
+    DWORD localBytes = 0;
+    DWORD returnedBytes = 0;
+
+    if (response == nullptr) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    ZeroMemory(response, sizeof(*response));
+    InitializeGaYmProtocolHeader(
+        &request.Header,
+        sizeof(request) - sizeof(request.Header));
+    request.SnapshotKind = snapshotKind;
+
+    if (bytesReturned == nullptr) {
+        bytesReturned = &localBytes;
+    } else {
+        *bytesReturned = 0;
+    }
+
+    if (!SendIoctlRaw(
+            hDevice,
+            IOCTL_GAYM_QUERY_SNAPSHOT,
+            &request,
+            sizeof(request),
+            response,
+            sizeof(*response),
+            &returnedBytes)) {
+        if (bytesReturned != nullptr) {
+            *bytesReturned = returnedBytes;
+        }
+        return false;
+    }
+
+    if (!ValidateGaYmProtocolHeader(
+            response->Header,
+            static_cast<ULONG>(sizeof(response->Payload)),
+            returnedBytes)) {
+        if (bytesReturned != nullptr) {
+            *bytesReturned = returnedBytes;
+        }
+        return false;
+    }
+
+    if (bytesReturned != nullptr) {
+        *bytesReturned = returnedBytes;
+    }
+
+    return true;
+}
+
+inline bool QueryDeviceSummary(
+    HANDLE hDevice,
+    GAYM_QUERY_DEVICE_SUMMARY_RESPONSE* response,
+    DWORD* bytesReturned = nullptr)
+{
+    return QuerySnapshotResponse(hDevice, GAYM_SNAPSHOT_DEVICE_SUMMARY, response, bytesReturned);
+}
+
+inline bool QueryRuntimeCounters(
+    HANDLE hDevice,
+    GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE* response,
+    DWORD* bytesReturned = nullptr)
+{
+    return QuerySnapshotResponse(hDevice, GAYM_SNAPSHOT_RUNTIME_COUNTERS, response, bytesReturned);
+}
+
+inline bool QueryLastIoSnapshot(
+    HANDLE hDevice,
+    GAYM_QUERY_LAST_IO_RESPONSE* response,
+    DWORD* bytesReturned = nullptr)
+{
+    return QuerySnapshotResponse(hDevice, GAYM_SNAPSHOT_LAST_IO, response, bytesReturned);
+}
+
+inline bool QueryTraceSnapshot(
+    HANDLE hDevice,
+    GAYM_QUERY_TRACE_RESPONSE* response,
+    DWORD* bytesReturned = nullptr)
+{
+    return QuerySnapshotResponse(hDevice, GAYM_SNAPSHOT_TRACE, response, bytesReturned);
+}
+
+inline bool QueryOutputSnapshot(
+    HANDLE hDevice,
+    GAYM_QUERY_OUTPUT_RESPONSE* response,
+    DWORD* bytesReturned = nullptr)
+{
+    return QuerySnapshotResponse(hDevice, GAYM_SNAPSHOT_OUTPUT, response, bytesReturned);
 }
 
 inline bool GaYmShouldMirrorToLower()

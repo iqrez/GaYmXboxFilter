@@ -81,6 +81,13 @@ Optional manual physical-transition coverage:
 
 Those switches intentionally require operator participation. They validate that override state clears cleanly across unplug/replug and sleep/resume without baking risky power-control behavior into the script itself.
 
+Manual transition flow:
+
+1. run the chosen command once to arm the override and write `out\transition-check-state.json`
+2. perform the physical transition
+3. rerun the same command
+4. the script auto-resumes, verifies override cleared, and removes the state file on success
+
 ## Supported Diagnostic Tools
 
 Full maintainer tool set:
@@ -161,5 +168,5 @@ As of March 28, 2026:
 - `scripts/release-check.ps1` passes on the supported live hybrid stack
 - `scripts/release-check.ps1` can pause at the reboot boundary during reinstall, then resume pass-2 validation automatically on the next run after reboot
 - `scripts/transition-check.ps1` can still report `SKIPPED` when Windows blocks in-session `pnputil /restart-device` for this HID child
-- `scripts/transition-check.ps1` can optionally drive manual unplug/replug and sleep/resume checks when you need deeper transition coverage
+- `scripts/transition-check.ps1` now supports resumable manual unplug/replug and sleep/resume checks through `out\transition-check-state.json`
 - a green `status` query still does not replace the runtime verifiers; use them to validate end-to-end behavior after stack changes

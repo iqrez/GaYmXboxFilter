@@ -6,16 +6,82 @@ param(
     [switch]$RestartParent,
     [switch]$InteractiveUnplugReplug,
     [switch]$InteractiveSleepResume,
-    [int]$TransitionTimeoutSeconds = 30
+    [int]$TransitionTimeoutSeconds = 30,
+    [string]$StateFile
 )
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$stageRoot = if ($Configuration -eq 'Debug') { Join-Path $repoRoot 'out\dev' } else { Join-Path $repoRoot 'out\release' }
+$pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
+$defaultStateFile = Join-Path $repoRoot 'out\transition-check-state.json'
+if (-not $StateFile) {
+    $StateFile = $defaultStateFile
+}
+
+function Read-TransitionState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return $null
+    }
+
+    return Get-Content -Path $Path -Raw | ConvertFrom-Json
+}
+
+function Write-TransitionState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('UnplugReplug', 'SleepResume')]
+        [string]$Mode
+    )
+
+    $directory = Split-Path -Parent $Path
+    if (-not (Test-Path $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+
+    $state = [ordered]@{
+        Version       = 1
+        Mode          = $Mode
+        Configuration = $Configuration
+        SavedAt       = (Get-Date).ToString('o')
+    }
+
+    $state | ConvertTo-Json | Set-Content -Path $Path -Encoding ASCII
+}
+
+function Remove-TransitionState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (Test-Path $Path) {
+        Remove-Item -Path $Path -Force
+    }
+}
+
+$pendingState = Read-TransitionState -Path $StateFile
+$effectiveConfiguration = $Configuration
+if ($pendingState) {
+    if ($PSBoundParameters.ContainsKey('Configuration') -and $Configuration -ne $pendingState.Configuration) {
+        throw ("Pending transition state expects configuration '{0}', but '{1}' was requested." -f $pendingState.Configuration, $Configuration)
+    }
+
+    $effectiveConfiguration = [string]$pendingState.Configuration
+}
+
+$stageRoot = if ($effectiveConfiguration -eq 'Debug') { Join-Path $repoRoot 'out\dev' } else { Join-Path $repoRoot 'out\release' }
 $toolsRoot = Join-Path $stageRoot 'tools'
 $cli = Join-Path $toolsRoot 'GaYmCLI.exe'
-$pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -133,6 +199,22 @@ function Assert-OverrideCleared {
     }
 }
 
+function Resume-ManualTransition {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('UnplugReplug', 'SleepResume')]
+        [string]$Mode
+    )
+
+    $label = if ($Mode -eq 'UnplugReplug') { 'manual unplug/replug' } else { 'manual sleep/resume' }
+    Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
+    Assert-OverrideCleared -Label $label
+    Remove-TransitionState -Path $StateFile
+
+    Write-Host ''
+    Write-Host ("Transition check PASS ({0})." -f $label)
+}
+
 function Invoke-DeviceRestart {
     param(
         [Parameter(Mandatory = $true)]
@@ -173,11 +255,20 @@ function Invoke-DeviceRestart {
 Assert-Administrator
 
 if ($BuildTools) {
-    & (Join-Path $PSScriptRoot 'build-tools.ps1') -Configuration $Configuration
+    & (Join-Path $PSScriptRoot 'build-tools.ps1') -Configuration $effectiveConfiguration
 }
 
 if (-not (Test-Path $cli)) {
     throw "GaYmCLI.exe not found at $cli. Run scripts\build-tools.ps1 first or use -BuildTools."
+}
+
+if ($InteractiveUnplugReplug -and $InteractiveSleepResume) {
+    throw 'Choose only one manual transition mode at a time.'
+}
+
+if ($pendingState) {
+    Resume-ManualTransition -Mode ([string]$pendingState.Mode)
+    return
 }
 
 $hidChild = Get-HidChildInstanceId
@@ -189,6 +280,8 @@ Write-Host '=== Prime override state ==='
 Invoke-UpperCli -Arguments @('on', '0')
 Invoke-UpperCli -Arguments @('report', '0', '1', '0', '15', '0', '0', '32767', '0', '0', '0')
 Start-Sleep -Milliseconds 250
+
+$pausedForManualTransition = $false
 
 try {
     $skipped = $false
@@ -223,25 +316,29 @@ try {
 
     if ($InteractiveUnplugReplug) {
         Write-Host ''
-        Read-Host 'Unplug the controller now, then press Enter to begin disappearance monitoring'
-        Wait-ForDeviceAbsence -Probe ${function:Get-HidChildInstanceId} -Description 'HID child after unplug' -TimeoutSeconds $TransitionTimeoutSeconds
-        Read-Host 'Replug the controller now, then press Enter to begin re-enumeration monitoring'
-        Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child re-enumeration after unplug/replug' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
-        Assert-OverrideCleared -Label 'unplug/replug'
+        Write-TransitionState -Path $StateFile -Configuration $effectiveConfiguration -Mode 'UnplugReplug'
+        $pausedForManualTransition = $true
+        Write-Host ("Transition state saved to {0}" -f $StateFile)
+        Write-Host 'Unplug the controller completely, plug it back in, then rerun this command to resume validation.'
+        return
     }
 
     if ($InteractiveSleepResume) {
         Write-Host ''
-        Read-Host 'Put the machine to sleep now, wake it, unlock it, then press Enter to continue'
-        Wait-ForDevice -Probe ${function:Get-HidChildInstanceId} -Description 'HID child after sleep/resume' -TimeoutSeconds $TransitionTimeoutSeconds | Out-Null
-        Assert-OverrideCleared -Label 'sleep/resume'
+        Write-TransitionState -Path $StateFile -Configuration $effectiveConfiguration -Mode 'SleepResume'
+        $pausedForManualTransition = $true
+        Write-Host ("Transition state saved to {0}" -f $StateFile)
+        Write-Host 'Put the machine to sleep, wake it, unlock it, then rerun this command to resume validation.'
+        return
     }
 }
 finally {
-    try {
-        Invoke-UpperCli -Arguments @('off', '0')
-    } catch {
-        Write-Warning "Best-effort override cleanup failed: $($_.Exception.Message)"
+    if (-not $pausedForManualTransition) {
+        try {
+            Invoke-UpperCli -Arguments @('off', '0')
+        } catch {
+            Write-Warning "Best-effort override cleanup failed: $($_.Exception.Message)"
+        }
     }
 }
 

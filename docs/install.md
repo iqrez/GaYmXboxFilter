@@ -92,6 +92,15 @@ Full release-style validation, including uninstall/reinstall and final rollback:
 
 If Windows requires a reboot after the reinstall phase, `release-check.ps1` pauses intentionally, writes `out\release-check-state.json`, and exits without treating that reboot boundary as a harness failure. After reboot, rerun the same command and it resumes pass-2 validation automatically.
 
+Manual transition validation uses the same pattern:
+
+```powershell
+.\scripts\transition-check.ps1 -InteractiveUnplugReplug
+.\scripts\transition-check.ps1 -InteractiveSleepResume
+```
+
+Those commands arm the override, write `out\transition-check-state.json`, and tell you to perform the physical transition. After the unplug/replug or sleep/resume is complete, rerun the same command and the script resumes verification instead of starting from scratch.
+
 Manual stack verification:
 
 ```powershell

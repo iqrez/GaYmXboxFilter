@@ -136,9 +136,12 @@ function Get-StackDriverNames {
 
 function Test-SupportedHybridStack {
     param(
-        [Parameter(Mandatory = $true)]
         [string[]]$StackNames
     )
+
+    if ($null -eq $StackNames -or $StackNames.Count -eq 0) {
+        return $false
+    }
 
     $expectedStack = @('GaYmXInputFilter', 'xinputhid', 'GaYmFilter', 'HidUsb')
     if ($StackNames.Count -ne $expectedStack.Count) {
@@ -193,6 +196,9 @@ if (-not $instanceId) {
 
 $preInstallStackText = Get-LiveStackText -InstanceId $instanceId
 $preInstallStackNames = Get-StackDriverNames -StackText $preInstallStackText
+if ($null -eq $preInstallStackNames) {
+    $preInstallStackNames = @()
+}
 $stackAlreadySupported = Test-SupportedHybridStack -StackNames $preInstallStackNames
 
 function Invoke-PnpAddDriver {
@@ -240,13 +246,20 @@ $rebootRequired = $upperResult.RebootRequired -or $rebootRequired
 Start-Sleep -Seconds 2
 $stackText = Get-LiveStackText -InstanceId $instanceId
 $stackNames = Get-StackDriverNames -StackText $stackText
+if ($null -eq $stackNames) {
+    $stackNames = @()
+}
 $driverRecordsAfter = Get-GaYmDriverRecords
 
 Write-Host ''
 Write-Host 'Install requested for the supported hybrid stack.'
 Write-Host ("Artifact mode: {0}" -f $layout.Mode)
 Write-Host "Target instance: $instanceId"
-Write-Host ("Normalized stack: {0}" -f ($stackNames -join ' -> '))
+if ($stackNames.Count -gt 0) {
+    Write-Host ("Normalized stack: {0}" -f ($stackNames -join ' -> '))
+} else {
+    Write-Warning 'Normalized stack is currently unavailable. The device may be in a reboot-required or problem state.'
+}
 if ($driverRecordsAfter.Count -gt 0) {
     Write-Host ("GaYm packages: {0}" -f (($driverRecordsAfter | ForEach-Object { "$($_.OriginalName)=$($_.PublishedName)" }) -join ', '))
 }

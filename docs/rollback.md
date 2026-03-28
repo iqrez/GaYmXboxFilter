@@ -31,6 +31,12 @@ If Windows reports pending device configuration, reboot afterward.
 
 Run rollback from an elevated PowerShell session.
 
+Rollback removes the GaYm driver packages. It does not change global boot policy such as testsigning. If you enabled testsigning for bundle validation and want to restore the machine afterward, turn it off explicitly:
+
+```powershell
+bcdedit /set testsigning off
+```
+
 ## If The HID Child Disappears
 
 Recovery order:

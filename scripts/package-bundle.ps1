@@ -75,8 +75,8 @@ foreach ($scriptName in @(
 }
 
 $commit = (git -C $repoRoot rev-parse --short HEAD).Trim()
-$tag = (git -C $repoRoot describe --tags --exact-match 2>$null)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tag)) {
+$tag = ((git -C $repoRoot tag --points-at HEAD) | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($tag)) {
     $tag = 'unreleased'
 }
 

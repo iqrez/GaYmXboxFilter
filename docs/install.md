@@ -36,6 +36,8 @@ If that script reports that testsigning is disabled, enable it and reboot:
 
 If Secure Boot blocks test mode, disable Secure Boot for the test machine or use a production-signed package instead.
 
+Testsigning is a machine boot-policy change. Installing or uninstalling the GaYm packages does not automatically turn testsigning back off.
+
 ## Build Drivers
 
 ```powershell
@@ -95,6 +97,8 @@ Install order:
 The script installs both packages against the supported `02FF` HID child path. If Windows reports pending configuration or reboot requirements, reboot before trusting runtime results.
 
 Repeated installs are supported. If the current pair is already active and up to date, the script reports that no package changes were required instead of treating the run as an error.
+
+If install reaches a reboot-required or Code 52 intermediate device state, reboot before running runtime verification. The script should warn clearly about that state, but the runtime verifiers are not expected to pass until Windows finishes the reboot-dependent policy and device reload work.
 
 ## Post-Install Checklist
 

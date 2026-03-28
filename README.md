@@ -69,6 +69,8 @@ Build the release operator bundle:
 .\scripts\package-bundle.ps1
 ```
 
+The release bundle keeps the supported verifiers and CLI control path, but omits deep packet sniffers and disables the maintainer-only `jitter` command.
+
 Install the supported hybrid stack:
 
 ```powershell
@@ -91,4 +93,5 @@ Run the smoke test:
 ## Notes
 
 - `GAYM_CONTROL_TARGET` remains available as a hidden debug override. It is not part of the supported operator workflow.
+- `jitter` is a maintainer-only control intended for debug/full tool builds. It is compiled out of the release bundle CLI.
 - Generated binaries, logs, test captures, and packaging output are intentionally excluded from source control. Use [out](./out) or the default build folders as local-only artifacts.

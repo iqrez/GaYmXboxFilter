@@ -8,6 +8,8 @@ Build the active tools:
 .\scripts\build-tools.ps1
 ```
 
+Maintainer builds keep the full diagnostic surface, including packet sniffers and the `GaYmCLI.exe jitter` command.
+
 Query live status:
 
 ```powershell
@@ -85,6 +87,12 @@ Release bundle tool set:
 - `SecurityAutoVerify.exe`
 - `DirectInputAutoVerify.exe`
 - `XInputMonitor.exe`
+
+Release bundle restrictions:
+
+- `GaYmCLI.exe jitter` is not available
+- deep sniffers and packet probes are excluded from the bundle
+- lower-target overrides remain undocumented maintainer-only diagnostics, not operator workflow
 
 ## What To Collect For A Bug Report
 

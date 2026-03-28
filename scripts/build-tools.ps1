@@ -58,13 +58,18 @@ function Invoke-ToolBuild {
         [string[]]$Sources,
         [string[]]$Libraries = @(),
         [string[]]$CompileFlags = @(),
-        [string[]]$LinkFlags = @()
+        [string[]]$LinkFlags = @(),
+        [bool]$EnableDevDiagnostics = $true
     )
 
     $quotedSources = ($Sources | ForEach-Object { '"' + (Join-Path $toolsRoot $_) + '"' }) -join ' '
     $includeFlags = @('/I"' + $toolsRoot + '"', '/I"' + $repoRoot + '"') -join ' '
     $libraryFlags = if ($Libraries.Count -gt 0) { $Libraries -join ' ' } else { '' }
-    $compileFlags = if ($CompileFlags.Count -gt 0) { $CompileFlags -join ' ' } else { '' }
+    $allCompileFlags = @("/DGAYM_ENABLE_DEV_DIAGNOSTICS=$([int]$EnableDevDiagnostics)")
+    if ($CompileFlags.Count -gt 0) {
+        $allCompileFlags += $CompileFlags
+    }
+    $compileFlags = $allCompileFlags -join ' '
     $linkFlags = if ($LinkFlags.Count -gt 0) { $LinkFlags -join ' ' } else { '' }
     $outputPath = Join-Path $outRoot $OutputName
     $toolObjRoot = Join-Path $objRoot ($OutputName -replace '\.exe$', '')
@@ -125,6 +130,7 @@ $builds = if ($ToolProfile -eq 'ReleaseBundle') {
 foreach ($build in $builds) {
     $compileFlags = @()
     $linkFlags = @()
+    $enableDevDiagnostics = $ToolProfile -eq 'Full'
 
     if ($build.ContainsKey('CompileFlags')) {
         $compileFlags = $build.CompileFlags
@@ -134,7 +140,13 @@ foreach ($build in $builds) {
         $linkFlags = $build.LinkFlags
     }
 
-    Invoke-ToolBuild -OutputName $build.Output -Sources $build.Sources -Libraries $build.Libraries -CompileFlags $compileFlags -LinkFlags $linkFlags
+    Invoke-ToolBuild `
+        -OutputName $build.Output `
+        -Sources $build.Sources `
+        -Libraries $build.Libraries `
+        -CompileFlags $compileFlags `
+        -LinkFlags $linkFlags `
+        -EnableDevDiagnostics:$enableDevDiagnostics
 }
 
 Write-Host ''

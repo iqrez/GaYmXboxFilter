@@ -7,8 +7,8 @@
  *   GaYmCLI.exe status                    List devices and override state
  *   GaYmCLI.exe on    [device_index]      Enable override
  *   GaYmCLI.exe off   [device_index]      Disable override
- *   GaYmCLI.exe jitter <min_us> <max_us>  Set timing jitter
- *   GaYmCLI.exe jitter off                Disable jitter
+ *   GaYmCLI.exe jitter <min_us> <max_us>  Set timing jitter (maintainer builds only)
+ *   GaYmCLI.exe jitter off                Disable jitter (maintainer builds only)
  *   GaYmCLI.exe test  [device_index]      Send a test report (A + left stick right)
  */
 
@@ -216,8 +216,10 @@ static void PrintUsage()
     printf("  GaYmCLI vrumble <left> <right> [duration_ms] [device_index]\n");
     printf("  GaYmCLI on    [device_index]       Enable input override\n");
     printf("  GaYmCLI off   [device_index]       Disable input override\n");
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
     printf("  GaYmCLI jitter <min_us> <max_us>   Set timing jitter range (dev builds only)\n");
     printf("  GaYmCLI jitter off                 Disable jitter (dev builds only)\n");
+#endif
     printf("  GaYmCLI test  [device_index]       Inject a test report\n");
     printf("  GaYmCLI report [device_index] <btn0> <btn1> <dpad> <lt> <rt> <lx> <ly> <rx> <ry>\n");
 }
@@ -594,6 +596,7 @@ static void CmdOverride(int argc, char* argv[], bool enable)
     CloseHandle(h);
 }
 
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
 static void CmdJitter(int argc, char* argv[])
 {
     if (argc < 3) {
@@ -633,6 +636,14 @@ static void CmdJitter(int argc, char* argv[])
     }
     CloseHandle(h);
 }
+#else
+static void CmdJitter(int argc, char* argv[])
+{
+    UNREFERENCED_PARAMETER(argc);
+    UNREFERENCED_PARAMETER(argv);
+    fprintf(stderr, "The jitter command is not available in the release bundle profile.\n");
+}
+#endif
 
 static void CmdTest(int argc, char* argv[])
 {

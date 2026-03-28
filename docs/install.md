@@ -54,6 +54,8 @@ For an operator-facing release package, build the reduced release bundle:
 
 That stages a zip in `out/release` with only the supported driver packages, the curated release tool set, and the operator docs/scripts.
 
+The release bundle intentionally excludes deep packet sniffers and the maintainer-only `jitter` control path.
+
 ## Install The Supported Hybrid Stack
 
 ```powershell

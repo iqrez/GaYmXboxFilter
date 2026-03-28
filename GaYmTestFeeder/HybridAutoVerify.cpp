@@ -26,7 +26,7 @@ struct JoySnapshot {
 struct JoystickCandidate {
     UINT id = 0;
     JOYCAPSW caps = {};
-    JoySnapshot baseline = {};
+    JoySnapshot snapshot = {};
 };
 
 static void InitNeutralReport(GAYM_REPORT* report)
@@ -62,6 +62,61 @@ static bool WaitForPad(DWORD timeoutMs, DWORD* index, XINPUT_STATE* state)
     return false;
 }
 
+static bool IsInjectedTestPadState(const XINPUT_STATE& state)
+{
+    return (state.Gamepad.wButtons & XINPUT_GAMEPAD_A) != 0 &&
+        state.Gamepad.sThumbLX > 20000;
+}
+
+static bool WaitForQuiescentPad(DWORD index, DWORD timeoutMs, XINPUT_STATE* state)
+{
+    XINPUT_STATE previous = {};
+    bool havePrevious = false;
+    UINT stableCount = 0;
+    const DWORD start = GetTickCount();
+
+    while (GetTickCount() - start < timeoutMs) {
+        XINPUT_STATE current = {};
+        if (XInputGetState(index, &current) != ERROR_SUCCESS) {
+            havePrevious = false;
+            stableCount = 0;
+            Sleep(25);
+            continue;
+        }
+
+        if (IsInjectedTestPadState(current)) {
+            havePrevious = false;
+            stableCount = 0;
+            Sleep(25);
+            continue;
+        }
+
+        if (havePrevious &&
+            previous.dwPacketNumber == current.dwPacketNumber &&
+            std::memcmp(&previous.Gamepad, &current.Gamepad, sizeof(current.Gamepad)) == 0) {
+            ++stableCount;
+        } else {
+            previous = current;
+            havePrevious = true;
+            stableCount = 1;
+        }
+
+        if (stableCount >= 3) {
+            *state = current;
+            return true;
+        }
+
+        Sleep(25);
+    }
+
+    if (havePrevious) {
+        *state = previous;
+        return true;
+    }
+
+    return false;
+}
+
 static bool QueryJoystick(UINT id, JoySnapshot* snapshot)
 {
     std::memset(snapshot, 0, sizeof(*snapshot));
@@ -91,7 +146,7 @@ static std::vector<JoystickCandidate> EnumerateJoysticks()
         JoystickCandidate candidate = {};
         candidate.id = id;
         candidate.caps = localCaps;
-        candidate.baseline = snapshot;
+        candidate.snapshot = snapshot;
         candidates.push_back(candidate);
     }
 
@@ -144,8 +199,8 @@ static void PrintJoystickList(const std::vector<JoystickCandidate>& candidates)
             "Joystick %u: %ls  Baseline X=%lu Buttons=0x%08lX\n",
             candidate.id,
             candidate.caps.szPname,
-            candidate.baseline.info.dwXpos,
-            candidate.baseline.info.dwButtons);
+            candidate.snapshot.info.dwXpos,
+            candidate.snapshot.info.dwButtons);
     }
 }
 
@@ -187,10 +242,7 @@ static bool TryObserveJoystickState(
         const LONG threshold = joyRange / 4;
         const bool buttonA = (currentJoy.info.dwButtons & 0x1) != 0;
         const bool stickRight = (LONG)currentJoy.info.dwXpos > midpoint + threshold;
-        const bool movedFromBaseline =
-            (((LONG)currentJoy.info.dwXpos - (LONG)joystick.baseline.info.dwXpos) > (threshold / 2)) ||
-            (((currentJoy.info.dwButtons ^ joystick.baseline.info.dwButtons) & 0x1) != 0);
-        if (!buttonA || !stickRight || !movedFromBaseline) {
+        if (!buttonA || !stickRight) {
             continue;
         }
 
@@ -215,6 +267,25 @@ static bool VerifyOverrideDisabled()
     return success;
 }
 
+static void DisableOverride(HANDLE device, const GAYM_REPORT& neutral)
+{
+    const DWORD releaseStart = GetTickCount();
+    while (GetTickCount() - releaseStart < 80) {
+        InjectReport(device, &neutral);
+        Sleep(8);
+    }
+    SendIoctl(device, IOCTL_GAYM_OVERRIDE_OFF);
+}
+
+static void SendNeutralBurst(HANDLE device, const GAYM_REPORT& neutral, DWORD durationMs)
+{
+    const DWORD start = GetTickCount();
+    while (GetTickCount() - start < durationMs) {
+        InjectReport(device, &neutral);
+        Sleep(8);
+    }
+}
+
 int main()
 {
     std::printf("GaYm hybrid verifier\n\n");
@@ -225,6 +296,11 @@ int main()
         return 1;
     }
 
+    GAYM_REPORT neutral = {};
+    InitNeutralReport(&neutral);
+    SendIoctl(device, IOCTL_GAYM_OVERRIDE_OFF);
+    Sleep(100);
+
     DWORD padIndex = 0;
     XINPUT_STATE baselinePad = {};
     if (!WaitForPad(3000, &padIndex, &baselinePad)) {
@@ -233,18 +309,10 @@ int main()
         return 1;
     }
 
-    const std::vector<JoystickCandidate> joysticks = EnumerateJoysticks();
-    if (joysticks.empty()) {
-        std::fprintf(stderr, "ERROR: No WinMM joystick found.\n");
+    if (!WaitForQuiescentPad(padIndex, 1500, &baselinePad)) {
+        std::fprintf(stderr, "ERROR: XInput pad did not settle to a quiescent baseline.\n");
         CloseHandle(device);
         return 1;
-    }
-
-    for (JoystickCandidate& joystick : const_cast<std::vector<JoystickCandidate>&>(joysticks)) {
-        JoySnapshot stable = {};
-        if (WaitForStableJoystick(joystick.id, 500, &stable)) {
-            joystick.baseline = stable;
-        }
     }
 
     std::printf("XInput pad index: %lu\n", padIndex);
@@ -252,32 +320,6 @@ int main()
         baselinePad.dwPacketNumber,
         baselinePad.Gamepad.sThumbLX,
         baselinePad.Gamepad.wButtons);
-    PrintJoystickList(joysticks);
-    std::printf("\n");
-
-    GAYM_REPORT neutral = {};
-    InitNeutralReport(&neutral);
-
-    bool overrideEnabled = false;
-    auto cleanup = [&]() {
-        if (overrideEnabled) {
-            const DWORD releaseStart = GetTickCount();
-            while (GetTickCount() - releaseStart < 80) {
-                InjectReport(device, &neutral);
-                Sleep(8);
-            }
-            SendIoctl(device, IOCTL_GAYM_OVERRIDE_OFF);
-            overrideEnabled = false;
-        }
-        CloseHandle(device);
-    };
-
-    if (!SendIoctl(device, IOCTL_GAYM_OVERRIDE_ON)) {
-        std::fprintf(stderr, "ERROR: Failed to enable override (error %lu)\n", GetLastError());
-        CloseHandle(device);
-        return 1;
-    }
-    overrideEnabled = true;
 
     GAYM_REPORT report = {};
     InitNeutralReport(&report);
@@ -285,33 +327,101 @@ int main()
     report.ThumbLeftX = 32767;
 
     XINPUT_STATE observedPad = {};
-    JoySnapshot observedJoy = {};
-    UINT observedJoystickId = 0;
     bool sawXInput = false;
-    bool sawJoy = false;
 
-    const DWORD injectStart = GetTickCount();
-    while (GetTickCount() - injectStart < 1400) {
+    if (!SendIoctl(device, IOCTL_GAYM_OVERRIDE_ON)) {
+        std::fprintf(stderr, "ERROR: Failed to enable XInput override (error %lu)\n", GetLastError());
+        CloseHandle(device);
+        return 1;
+    }
+
+    SendNeutralBurst(device, neutral, 250);
+    Sleep(80);
+    if (!WaitForQuiescentPad(padIndex, 1000, &baselinePad)) {
+        std::fprintf(stderr, "ERROR: XInput pad did not settle after neutral warmup.\n");
+        DisableOverride(device, neutral);
+        CloseHandle(device);
+        return 1;
+    }
+
+    const DWORD xinputStart = GetTickCount();
+    while (GetTickCount() - xinputStart < 1500) {
         if (!InjectReport(device, &report)) {
-            std::fprintf(stderr, "ERROR: InjectReport failed (error %lu)\n", GetLastError());
-            cleanup();
+            std::fprintf(stderr, "ERROR: InjectReport failed during XInput phase (error %lu)\n", GetLastError());
+            DisableOverride(device, neutral);
+            CloseHandle(device);
             return 1;
         }
 
-        if (!sawXInput) {
-            sawXInput = TryObservePadState(padIndex, baselinePad, &observedPad);
-        }
-        if (!sawJoy) {
-            sawJoy = TryObserveJoystickState(joysticks, &observedJoystickId, &observedJoy);
-        }
-        if (sawXInput && sawJoy) {
+        if (TryObservePadState(padIndex, baselinePad, &observedPad)) {
+            sawXInput = true;
             break;
         }
 
         Sleep(8);
     }
 
-    cleanup();
+    DisableOverride(device, neutral);
+    Sleep(150);
+
+    JoySnapshot observedJoy = {};
+    UINT observedJoystickId = 0;
+    bool sawJoy = false;
+
+    if (!SendIoctl(device, IOCTL_GAYM_OVERRIDE_ON)) {
+        std::fprintf(stderr, "ERROR: Failed to enable WinMM override (error %lu)\n", GetLastError());
+        CloseHandle(device);
+        return 1;
+    }
+
+    const DWORD warmupStart = GetTickCount();
+    while (GetTickCount() - warmupStart < 250) {
+        if (!InjectReport(device, &report)) {
+            std::fprintf(stderr, "ERROR: InjectReport failed during WinMM warmup (error %lu)\n", GetLastError());
+            DisableOverride(device, neutral);
+            CloseHandle(device);
+            return 1;
+        }
+        Sleep(8);
+    }
+
+    std::vector<JoystickCandidate> joysticks = EnumerateJoysticks();
+    if (joysticks.empty()) {
+        std::fprintf(stderr, "ERROR: No WinMM joystick found after override activation.\n");
+        DisableOverride(device, neutral);
+        CloseHandle(device);
+        return 1;
+    }
+
+    for (JoystickCandidate& joystick : joysticks) {
+        JoySnapshot stable = {};
+        if (WaitForStableJoystick(joystick.id, 500, &stable)) {
+            joystick.snapshot = stable;
+        }
+    }
+
+    PrintJoystickList(joysticks);
+    std::printf("\n");
+
+    const DWORD joyStart = GetTickCount();
+    while (GetTickCount() - joyStart < 2000) {
+        if (!InjectReport(device, &report)) {
+            std::fprintf(stderr, "ERROR: InjectReport failed during WinMM phase (error %lu)\n", GetLastError());
+            DisableOverride(device, neutral);
+            CloseHandle(device);
+            return 1;
+        }
+
+        if (TryObserveJoystickState(joysticks, &observedJoystickId, &observedJoy)) {
+            sawJoy = true;
+            break;
+        }
+
+        Sleep(8);
+    }
+
+    DisableOverride(device, neutral);
+    CloseHandle(device);
 
     const bool overrideOff = VerifyOverrideDisabled();
     const bool pass = sawXInput && sawJoy && overrideOff;

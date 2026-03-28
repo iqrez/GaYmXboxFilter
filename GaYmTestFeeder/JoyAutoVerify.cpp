@@ -24,7 +24,7 @@ struct JoySnapshot {
 struct JoystickCandidate {
     UINT id = 0;
     JOYCAPSW caps = {};
-    JoySnapshot baseline = {};
+    JoySnapshot snapshot = {};
 };
 
 static void InitNeutralReport(GAYM_REPORT* report)
@@ -61,7 +61,7 @@ static std::vector<JoystickCandidate> EnumerateJoysticks()
         JoystickCandidate candidate = {};
         candidate.id = id;
         candidate.caps = localCaps;
-        candidate.baseline = snapshot;
+        candidate.snapshot = snapshot;
         candidates.push_back(candidate);
     }
 
@@ -75,9 +75,9 @@ static void PrintJoystickList(const std::vector<JoystickCandidate>& candidates)
             "Joystick %u: %ls  Baseline X=%lu Y=%lu Buttons=0x%08lX\n",
             candidate.id,
             candidate.caps.szPname,
-            candidate.baseline.info.dwXpos,
-            candidate.baseline.info.dwYpos,
-            candidate.baseline.info.dwButtons);
+            candidate.snapshot.info.dwXpos,
+            candidate.snapshot.info.dwYpos,
+            candidate.snapshot.info.dwButtons);
     }
 }
 
@@ -120,15 +120,6 @@ int main()
         return 1;
     }
 
-    const std::vector<JoystickCandidate> joysticks = EnumerateJoysticks();
-    if (joysticks.empty()) {
-        std::fprintf(stderr, "ERROR: No joystick visible via joyGetPosEx.\n");
-        CloseHandle(device);
-        return 1;
-    }
-
-    PrintJoystickList(joysticks);
-
     GAYM_REPORT neutral = {};
     InitNeutralReport(&neutral);
 
@@ -158,12 +149,32 @@ int main()
     report.Buttons[0] = GAYM_BTN_A;
     report.ThumbLeftX = 32767;
 
+    // Prime the native consumer path before opening WinMM handles.
+    const DWORD warmupStart = GetTickCount();
+    while (GetTickCount() - warmupStart < 250) {
+        if (!InjectReport(device, &report)) {
+            std::fprintf(stderr, "ERROR: InjectReport failed during warmup (error %lu)\n", GetLastError());
+            cleanup();
+            return 1;
+        }
+        Sleep(8);
+    }
+
+    std::vector<JoystickCandidate> joysticks = EnumerateJoysticks();
+    if (joysticks.empty()) {
+        std::fprintf(stderr, "ERROR: No joystick visible via joyGetPosEx after override activation.\n");
+        cleanup();
+        return 1;
+    }
+
+    PrintJoystickList(joysticks);
+
     JoySnapshot observed = {};
     UINT observedJoystickId = 0;
     bool pass = false;
 
     const DWORD start = GetTickCount();
-    while (GetTickCount() - start < 1200) {
+    while (GetTickCount() - start < 2000) {
         if (!InjectReport(device, &report)) {
             std::fprintf(stderr, "ERROR: InjectReport failed (error %lu)\n", GetLastError());
             cleanup();

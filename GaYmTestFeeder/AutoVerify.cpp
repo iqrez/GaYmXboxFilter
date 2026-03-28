@@ -446,12 +446,6 @@ int main()
             info.ReportsSent);
     }
 
-    if (!SendIoctl(device, IOCTL_GAYM_OVERRIDE_ON)) {
-        std::fprintf(stderr, "ERROR: Failed to enable override (error %lu)\n", GetLastError());
-        CloseHandle(device);
-        return 1;
-    }
-
     VerificationStep steps[5] = {};
     InitReport(&steps[0].report);
     steps[0].label = "Left stick right";
@@ -487,11 +481,24 @@ int main()
     if (useXinput) {
         std::printf("Monitoring XInput pad %lu (packet %lu)\n", padIndex, baseline.dwPacketNumber);
         for (const auto& step : steps) {
-            ObservedState observed = RunStep(device, padIndex, &step, &baseline);
+            if (!SendIoctl(device, IOCTL_GAYM_OVERRIDE_ON)) {
+                std::fprintf(stderr, "ERROR: Failed to enable override for %s (error %lu)\n", step.label, GetLastError());
+                allPassed = false;
+                break;
+            }
+
+            SendNeutralBurst(device, 250);
+            Sleep(80);
+
+            XINPUT_STATE stepBaseline = baseline;
+            WaitForPad(1000, &padIndex, &stepBaseline);
+
+            ObservedState observed = RunStep(device, padIndex, &step, &stepBaseline);
             if (!PrintEvaluation(&step, &observed)) {
                 allPassed = false;
             }
-            Sleep(120);
+            SendIoctl(device, IOCTL_GAYM_OVERRIDE_OFF);
+            Sleep(180);
         }
     } else {
         USHORT inputReportLength = 0;

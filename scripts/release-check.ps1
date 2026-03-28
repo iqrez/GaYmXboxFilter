@@ -12,8 +12,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'common-paths.ps1')
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$defaultStateFile = Join-Path $repoRoot 'out\release-check-state.json'
+$layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
+$defaultStateFile = New-GaYmStatePath -Layout $layout -LeafName 'release-check-state.json'
 if (-not $StateFile) {
     $StateFile = $defaultStateFile
 }
@@ -100,9 +103,8 @@ if ($ResumeAfterReboot) {
     $effectiveSkipRollbackCycle = [bool]$pendingState.SkipRollbackCycle
 }
 
-$stageRoot = if ($effectiveConfiguration -eq 'Debug') { Join-Path $repoRoot 'out\dev' } else { Join-Path $repoRoot 'out\release' }
-$toolsRoot = Join-Path $stageRoot 'tools'
-$securityVerifier = Join-Path $toolsRoot 'SecurityAutoVerify.exe'
+$layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $effectiveConfiguration
+$securityVerifier = Get-GaYmToolPath -Layout $layout -Name 'SecurityAutoVerify.exe'
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -172,8 +174,17 @@ try {
     }
 
     if ($Build) {
-        & (Join-Path $PSScriptRoot 'build-driver.ps1') -Configuration $effectiveConfiguration
-        & (Join-Path $PSScriptRoot 'build-tools.ps1') -Configuration $effectiveConfiguration
+        $buildDriverScript = Join-Path $PSScriptRoot 'build-driver.ps1'
+        $buildToolsScript = Join-Path $PSScriptRoot 'build-tools.ps1'
+        if (-not (Test-Path $buildDriverScript) -or -not (Test-Path $buildToolsScript)) {
+            throw 'This extracted bundle does not include build scripts. Rebuild from the full repo or run release-check against the bundled artifacts directly.'
+        }
+
+        & $buildDriverScript -Configuration $effectiveConfiguration
+        & $buildToolsScript -Configuration $effectiveConfiguration
+
+        $layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $effectiveConfiguration
+        $securityVerifier = Get-GaYmToolPath -Layout $layout -Name 'SecurityAutoVerify.exe'
     }
 
     Invoke-RequiredScript -Name 'Install Pass 1' -Action {

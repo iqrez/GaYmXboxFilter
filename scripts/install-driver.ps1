@@ -8,7 +8,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'common-paths.ps1')
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
+$packagePaths = Get-GaYmDriverPackagePaths -Layout $layout
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -153,18 +157,29 @@ function Test-SupportedHybridStack {
 Assert-Administrator
 
 if ($Build) {
-    & (Join-Path $PSScriptRoot 'build-driver.ps1') -Configuration $Configuration
+    $buildScript = Join-Path $PSScriptRoot 'build-driver.ps1'
+    if (-not (Test-Path $buildScript)) {
+        throw 'This extracted bundle does not include build-driver.ps1. Build from the full repo or install directly from the bundled driver packages.'
+    }
+
+    & $buildScript -Configuration $Configuration
     if ($LASTEXITCODE -ne 0) {
         throw 'Driver build failed.'
     }
+
+    $layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
+    $packagePaths = Get-GaYmDriverPackagePaths -Layout $layout
 }
 
-$stageRoot = if ($Configuration -eq 'Debug') { Join-Path $repoRoot 'out\dev' } else { Join-Path $repoRoot 'out\release' }
-$lowerInf = Join-Path $stageRoot 'driver-lower\package\GaYmFilter.inf'
-$upperInf = Join-Path $stageRoot 'driver-upper\package\GaYmXboxFilter.inf'
+$lowerInf = $packagePaths.LowerInf
+$upperInf = $packagePaths.UpperInf
 
 foreach ($path in @($lowerInf, $upperInf)) {
     if (-not (Test-Path $path)) {
+        if ($layout.Mode -eq 'Bundle') {
+            throw "Driver package not found inside the extracted bundle: $path. Re-extract the bundle or regenerate it with scripts\\package-bundle.ps1 from the repo."
+        }
+
         throw "Driver package not found: $path. Run scripts\\build-driver.ps1 first or use -Build."
     }
 }
@@ -206,6 +221,10 @@ function Invoke-PnpAddDriver {
         }
     }
 
+    if ($outputText -match 'root certificate which is not trusted' -or $outputText -match 'trust provider') {
+        throw "$FailureMessage Run scripts\prepare-test-machine.ps1 first to import the bundled test certificates and verify testsigning state."
+    }
+
     throw $FailureMessage
 }
 
@@ -225,6 +244,7 @@ $driverRecordsAfter = Get-GaYmDriverRecords
 
 Write-Host ''
 Write-Host 'Install requested for the supported hybrid stack.'
+Write-Host ("Artifact mode: {0}" -f $layout.Mode)
 Write-Host "Target instance: $instanceId"
 Write-Host ("Normalized stack: {0}" -f ($stackNames -join ' -> '))
 if ($driverRecordsAfter.Count -gt 0) {

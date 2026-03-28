@@ -5,6 +5,12 @@
 Turn override off explicitly:
 
 ```powershell
+.\tools\GaYmCLI.exe off
+```
+
+From the full repo, the equivalent path is:
+
+```powershell
 .\out\dev\tools\GaYmCLI.exe off
 ```
 

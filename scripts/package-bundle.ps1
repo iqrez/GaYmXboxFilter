@@ -29,6 +29,24 @@ function Copy-TreeContents {
     Copy-Item -Path (Join-Path $Source '*') -Destination $Destination -Recurse -Force
 }
 
+function Copy-FileSet {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationDirectory,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Patterns
+    )
+
+    New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
+    foreach ($pattern in $Patterns) {
+        Get-ChildItem -Path $SourceDirectory -File -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination (Join-Path $DestinationDirectory $_.Name) -Force
+        }
+    }
+}
+
 & (Join-Path $PSScriptRoot 'build-driver.ps1') -Configuration $Configuration
 & (Join-Path $PSScriptRoot 'build-tools.ps1') -Configuration $Configuration -ToolProfile ReleaseBundle
 
@@ -42,13 +60,16 @@ Copy-Item -Path (Join-Path $repoRoot 'README.md') -Destination $bundleRoot -Forc
 Copy-TreeContents -Source (Join-Path $repoRoot 'docs') -Destination $bundleDocs
 Copy-TreeContents -Source (Join-Path $stageRoot 'driver-upper') -Destination $bundleDriversUpper
 Copy-TreeContents -Source (Join-Path $stageRoot 'driver-lower') -Destination $bundleDriversLower
-Copy-TreeContents -Source (Join-Path $stageRoot 'tools') -Destination $bundleTools
+Copy-FileSet -SourceDirectory (Join-Path $stageRoot 'tools') -DestinationDirectory $bundleTools -Patterns @('*.exe', '*.ini')
 
 foreach ($scriptName in @(
+    'common-paths.ps1',
+    'prepare-test-machine.ps1',
     'install-driver.ps1',
     'uninstall-driver.ps1',
     'smoke-test.ps1',
-    'release-check.ps1'
+    'release-check.ps1',
+    'transition-check.ps1'
 )) {
     Copy-Item -Path (Join-Path $PSScriptRoot $scriptName) -Destination (Join-Path $bundleScripts $scriptName) -Force
 }
@@ -71,13 +92,16 @@ Contents
 - driver-lower
 - tools (release bundle profile)
 - docs
+- scripts/prepare-test-machine.ps1
 - scripts/install-driver.ps1
 - scripts/uninstall-driver.ps1
 - scripts/smoke-test.ps1
 - scripts/release-check.ps1
+- scripts/transition-check.ps1
 
 Notes
 - release bundle excludes deep sniffers and maintainer-only packet probes
+- release bundle includes test certificates for local-machine trust bootstrap
 - dev-only jitter support remains disabled in non-debug driver builds
 "@
 

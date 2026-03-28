@@ -7,6 +7,12 @@
 - test-signing environment appropriate for local driver development
 - wired Xbox controller that exposes `HID\VID_045E&PID_02FF&IG_00`
 
+If you are validating from the extracted release bundle instead of the full repo, you do not need the build prerequisites. You do still need:
+
+- elevated PowerShell
+- the bundled test certificates trusted on the machine
+- testsigning enabled if the machine is enforcing normal kernel signing policy
+
 ## Preflight
 
 Before install:
@@ -15,6 +21,20 @@ Before install:
 2. confirm the controller is connected and the `02FF` HID child exists
 3. if an older GaYm stack is already installed and behaving oddly, run `.\scripts\uninstall-driver.ps1` first
 4. if Windows already reports pending device configuration, reboot before reinstalling
+
+For a fresh test machine using the extracted bundle:
+
+```powershell
+.\scripts\prepare-test-machine.ps1
+```
+
+If that script reports that testsigning is disabled, enable it and reboot:
+
+```powershell
+.\scripts\prepare-test-machine.ps1 -EnableTestSigning
+```
+
+If Secure Boot blocks test mode, disable Secure Boot for the test machine or use a production-signed package instead.
 
 ## Build Drivers
 
@@ -62,6 +82,11 @@ The release bundle intentionally excludes deep packet sniffers and the maintaine
 .\scripts\install-driver.ps1
 ```
 
+The same command works from either:
+
+- the full repo root
+- the extracted release bundle root
+
 Install order:
 
 1. lower HID-child filter package
@@ -75,7 +100,7 @@ Repeated installs are supported. If the current pair is already active and up to
 
 1. both packages were added successfully
 2. the HID child stack shows `GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb`
-3. `.\out\dev\tools\GaYmCLI.exe status` succeeds
+3. `.\tools\GaYmCLI.exe status` succeeds in the extracted bundle, or `.\out\dev\tools\GaYmCLI.exe status` succeeds in the full repo
 4. no pending reboot/configuration warning remains before final runtime verification
 
 ## Verify Attachment
@@ -104,7 +129,8 @@ Those commands arm the override, write `out\transition-check-state.json`, and te
 Manual stack verification:
 
 ```powershell
-pnputil /enum-devices /connected /instanceid "HID\VID_045E&PID_02FF&IG_00\*" /stack
+$hidChild = Get-PnpDevice -Class HIDClass | Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' } | Select-Object -First 1 -ExpandProperty InstanceId
+pnputil /enum-devices /instanceid "$hidChild" /stack /drivers
 ```
 
 Expected stack shape:

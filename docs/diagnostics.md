@@ -13,27 +13,33 @@ Maintainer builds keep the full diagnostic surface, including packet sniffers an
 Query live status:
 
 ```powershell
-.\out\dev\tools\GaYmCLI.exe status
+.\tools\GaYmCLI.exe status
 ```
 
 The default `status` path is the supported upper control channel.
 
+When running from the full repo instead of the extracted bundle, the equivalent path is:
+
+```powershell
+.\out\dev\tools\GaYmCLI.exe status
+```
+
 Run the current hybrid regression:
 
 ```powershell
-.\out\dev\tools\HybridAutoVerify.exe
+.\tools\HybridAutoVerify.exe
 ```
 
 Native-path regression:
 
 ```powershell
-.\out\dev\tools\JoyAutoVerify.exe
+.\tools\JoyAutoVerify.exe
 ```
 
 XInput-only regression:
 
 ```powershell
-.\out\dev\tools\AutoVerify.exe
+.\tools\AutoVerify.exe
 ```
 
 Full release-style orchestration:
@@ -50,7 +56,7 @@ Upper diagnostics explicitly:
 
 ```powershell
 $env:GAYM_CONTROL_TARGET = 'upper'
-.\out\dev\tools\GaYmCLI.exe status
+.\tools\GaYmCLI.exe status
 Remove-Item Env:GAYM_CONTROL_TARGET
 ```
 
@@ -58,7 +64,7 @@ Lower diagnostics explicitly:
 
 ```powershell
 $env:GAYM_CONTROL_TARGET = 'lower'
-.\out\dev\tools\GaYmCLI.exe status
+.\tools\GaYmCLI.exe status
 Remove-Item Env:GAYM_CONTROL_TARGET
 ```
 
@@ -130,7 +136,7 @@ Release bundle restrictions:
 
 Capture all of the following:
 
-1. `GaYmCLI.exe status`
+1. `.\tools\GaYmCLI.exe status` or the repo-staged equivalent
 2. `pnputil` stack output for the `02FF` HID child
 3. the exact verifier used and whether it passed or failed
 4. whether the controller needed unplug/replug or reboot before the failure

@@ -73,9 +73,11 @@ $projects = @(
         Files = @(
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter.sys"; Target = 'GaYmXboxFilter.sys' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter.inf"; Target = 'GaYmXboxFilter.inf' }
+            @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter.cer"; Target = 'GaYmXboxFilter.cer' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter\GaYmXboxFilter.inf"; Target = 'package\GaYmXboxFilter.inf' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter\GaYmXboxFilter.sys"; Target = 'package\GaYmXboxFilter.sys' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter\gaymxboxfilter.cat"; Target = 'package\gaymxboxfilter.cat' }
+            @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmXboxFilter.cer"; Target = 'package\GaYmXboxFilter.cer' }
         )
     }
     @{
@@ -85,9 +87,11 @@ $projects = @(
         Files = @(
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter.sys"; Target = 'GaYmFilter.sys' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter.inf"; Target = 'GaYmFilter.inf' }
+            @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter.cer"; Target = 'GaYmFilter.cer' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter\GaYmFilter.inf"; Target = 'package\GaYmFilter.inf' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter\GaYmFilter.sys"; Target = 'package\GaYmFilter.sys' }
             @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter\gaymfilter.cat"; Target = 'package\gaymfilter.cat' }
+            @{ Source = Join-Path $repoRoot "x64\$Configuration\GaYmFilter\GaYmFilter.cer"; Target = 'package\GaYmFilter.cer' }
         )
     }
 )

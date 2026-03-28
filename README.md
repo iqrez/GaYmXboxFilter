@@ -81,6 +81,18 @@ Install the supported hybrid stack:
 .\scripts\install-driver.ps1
 ```
 
+On a fresh Windows test machine using the extracted release bundle, prepare trust and test-mode prerequisites first:
+
+```powershell
+.\scripts\prepare-test-machine.ps1
+```
+
+If the script reports that testsigning is disabled, enable it and reboot:
+
+```powershell
+.\scripts\prepare-test-machine.ps1 -EnableTestSigning
+```
+
 Run the smoke test:
 
 ```powershell

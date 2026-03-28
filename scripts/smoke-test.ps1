@@ -8,22 +8,37 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'common-paths.ps1')
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$stageRoot = if ($Configuration -eq 'Debug') { Join-Path $repoRoot 'out\dev' } else { Join-Path $repoRoot 'out\release' }
-$toolsRoot = Join-Path $stageRoot 'tools'
-$cli = Join-Path $toolsRoot 'GaYmCLI.exe'
-$joyVerify = Join-Path $toolsRoot 'JoyAutoVerify.exe'
-$hybridVerify = Join-Path $toolsRoot 'HybridAutoVerify.exe'
+$layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
+$cli = Get-GaYmToolPath -Layout $layout -Name 'GaYmCLI.exe'
+$joyVerify = Get-GaYmToolPath -Layout $layout -Name 'JoyAutoVerify.exe'
+$hybridVerify = Get-GaYmToolPath -Layout $layout -Name 'HybridAutoVerify.exe'
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
 
 if ($BuildTools) {
-    & (Join-Path $PSScriptRoot 'build-tools.ps1') -Configuration $Configuration
+    $buildToolsScript = Join-Path $PSScriptRoot 'build-tools.ps1'
+    if (-not (Test-Path $buildToolsScript)) {
+        throw 'This extracted bundle does not include build-tools.ps1. Use the bundled tools directly or rebuild from the full repo.'
+    }
+
+    & $buildToolsScript -Configuration $Configuration
     if ($LASTEXITCODE -ne 0) {
         throw 'Tool build failed.'
     }
+
+    $layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
+    $cli = Get-GaYmToolPath -Layout $layout -Name 'GaYmCLI.exe'
+    $joyVerify = Get-GaYmToolPath -Layout $layout -Name 'JoyAutoVerify.exe'
+    $hybridVerify = Get-GaYmToolPath -Layout $layout -Name 'HybridAutoVerify.exe'
 }
 
 if (-not (Test-Path $cli)) {
+    if ($layout.Mode -eq 'Bundle') {
+        throw "GaYmCLI.exe not found inside the extracted bundle: $cli. Re-extract the bundle or regenerate it with scripts\\package-bundle.ps1 from the repo."
+    }
+
     throw "GaYmCLI.exe not found at $cli. Run scripts\\build-tools.ps1 first or use -BuildTools."
 }
 
@@ -152,6 +167,7 @@ if (-not (Test-SupportedHybridStack -StackNames $stackNames)) {
 }
 
 Write-Host '=== Live stack ==='
+Write-Host ("Artifact mode: {0}" -f $layout.Mode)
 Write-Host ("Normalized stack: {0}" -f ($stackNames -join ' -> '))
 Write-Host $stackText
 Write-Host ''

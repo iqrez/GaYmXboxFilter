@@ -12,9 +12,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'common-paths.ps1')
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
-$defaultStateFile = Join-Path $repoRoot 'out\transition-check-state.json'
+$layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $Configuration
+$defaultStateFile = New-GaYmStatePath -Layout $layout -LeafName 'transition-check-state.json'
 if (-not $StateFile) {
     $StateFile = $defaultStateFile
 }
@@ -79,9 +82,8 @@ if ($pendingState) {
     $effectiveConfiguration = [string]$pendingState.Configuration
 }
 
-$stageRoot = if ($effectiveConfiguration -eq 'Debug') { Join-Path $repoRoot 'out\dev' } else { Join-Path $repoRoot 'out\release' }
-$toolsRoot = Join-Path $stageRoot 'tools'
-$cli = Join-Path $toolsRoot 'GaYmCLI.exe'
+$layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $effectiveConfiguration
+$cli = Get-GaYmToolPath -Layout $layout -Name 'GaYmCLI.exe'
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -255,10 +257,22 @@ function Invoke-DeviceRestart {
 Assert-Administrator
 
 if ($BuildTools) {
-    & (Join-Path $PSScriptRoot 'build-tools.ps1') -Configuration $effectiveConfiguration
+    $buildToolsScript = Join-Path $PSScriptRoot 'build-tools.ps1'
+    if (-not (Test-Path $buildToolsScript)) {
+        throw 'This extracted bundle does not include build-tools.ps1. Use the bundled tools directly or rebuild from the full repo.'
+    }
+
+    & $buildToolsScript -Configuration $effectiveConfiguration
+
+    $layout = Get-GaYmArtifactLayout -Root $repoRoot -Configuration $effectiveConfiguration
+    $cli = Get-GaYmToolPath -Layout $layout -Name 'GaYmCLI.exe'
 }
 
 if (-not (Test-Path $cli)) {
+    if ($layout.Mode -eq 'Bundle') {
+        throw "GaYmCLI.exe not found inside the extracted bundle: $cli. Re-extract the bundle or regenerate it with scripts\\package-bundle.ps1 from the repo."
+    }
+
     throw "GaYmCLI.exe not found at $cli. Run scripts\build-tools.ps1 first or use -BuildTools."
 }
 

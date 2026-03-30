@@ -1639,3 +1639,75 @@ with immediate follow-on context in:
 - `0x0001AD7C`
 
 and `0x00008E74` kept only as the tiny sibling stub.
+
+## USBXHCI Transfer Body Follow Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-transfer-body-follow-assessment.ps1
+```
+
+That read-only pass compares the three real next-hop bodies behind `0x00046530`:
+
+- `0x0001A7FC`
+- `0x00019AC8`
+- `0x0001AD7C`
+
+Observed on this machine:
+
+- `0x0001A7FC`
+  - size:
+    - `250`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00019AC8`
+  - size:
+    - `80`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00045A8C`
+    - `KdRefreshDebuggerNotPresent`
+- `0x0001AD7C`
+  - size:
+    - `852`
+  - direct internal:
+    - `10`
+  - direct IAT:
+    - `5`
+  - visible direct behavior includes:
+    - `0x0001B0D8`
+    - `0x0001B158`
+    - `0x00055790`
+    - `0x00055864`
+    - `0x0000DA20`
+    - `0x0000DC30`
+    - `KeQueryPerformanceCounter`
+    - `EtwActivityIdControl`
+
+Interpretation:
+
+- `0x0001A7FC` is a thin instrumented leg
+- `0x00019AC8` is a small debug-leaning helper
+- `0x0001AD7C` is the only follow-on body with enough structure and fan-out to justify deeper offline work
+
+So the next clean offline target is now:
+
+- `0x0001AD7C`
+
+with immediate follow-on context in:
+
+- `0x0001B0D8`
+- `0x0001B158`
+- `0x00055790`
+- `0x00055864`
+
+and `0x0000DA20` / `0x0000DC30` kept as likely control-side hooks.

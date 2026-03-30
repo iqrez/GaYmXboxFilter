@@ -1357,3 +1357,62 @@ with immediate follow-on context in:
 - `0x0001AD7C`
 
 and `0x00008E74` kept only as the tiny sibling stub.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-transfer-body-follow-assessment.ps1`
+
+Current `0x00046530` follow-on assessment on this machine:
+
+- compared next hops:
+  - `0x0001A7FC`
+  - `0x00019AC8`
+  - `0x0001AD7C`
+- recommended next:
+  - `0x0001AD7C`
+
+Why:
+
+- `0x0001A7FC`
+  - is a thin instrumented leg
+  - one direct internal handoff to:
+    - `0x00058B00`
+  - one direct import:
+    - `WppAutoLogTrace`
+- `0x00019AC8`
+  - is a small debug-leaning helper
+  - one direct internal handoff to:
+    - `0x00045A8C`
+  - one direct import:
+    - `KdRefreshDebuggerNotPresent`
+- `0x0001AD7C`
+  - is the only substantive continuation:
+    - size `852`
+    - `10` direct internal
+    - `5` direct IAT
+  - internal fan-out includes:
+    - `0x0001B0D8`
+    - `0x0001B158`
+    - `0x00055790`
+    - `0x00055864`
+    - `0x0000DA20`
+    - `0x0000DC30`
+
+Interpretation:
+
+- the `0x00046530` split is no longer ambiguous
+- `0x0001A7FC` and `0x00019AC8` should both be demoted to side-context
+- `0x0001AD7C` is the only branch with enough structure to keep following
+
+So the next clean offline target is now:
+
+- `0x0001AD7C`
+
+with immediate follow-on context in:
+
+- `0x0001B0D8`
+- `0x0001B158`
+- `0x00055790`
+- `0x00055864`
+
+and `0x0000DA20` / `0x0000DC30` kept as the likely control-side hooks.

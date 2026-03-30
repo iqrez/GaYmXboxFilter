@@ -2512,3 +2512,22 @@ Interpretation:
   - `wrapper-and-time-anchor`
   - `delayed-sleep-and-trace-side`
 - `terminal-side-bridges` is lower-value because it is mostly bridge-to-stub and interrupt-side exit context
+
+The spike now also includes a direct controller-window comparison:
+
+- `scripts\capture-usbxhci-controller-window-compare.ps1`
+
+Current controller-window comparison on this machine:
+
+- output:
+  - `out\dev\usbxhci-controller-window-compare.txt`
+- top-ranked controller windows are now:
+  - `0x0001B1F0 timer-lifecycle-and-side-context`
+  - `0x0001B1F0 time-sampling-and-debug-gate`
+  - `0x0003634C wrapper-and-time-anchor`
+  - `0x0003634C delayed-sleep-and-trace-side`
+
+Interpretation:
+
+- the spike now has a concrete controller-window intervention order, not just a body-level target order
+- if deeper host timing work continues, those four windows are the first serious controller-side study set

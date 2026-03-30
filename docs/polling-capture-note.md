@@ -3017,3 +3017,34 @@ Interpretation:
 - `0x00015D30` is the strongest remaining transfer-side leaf body
 - unlike the controller cores, it keeps spinlock and IRQL transition machinery but no timer/wait orchestration
 - its direct descendants do not expose a better deeper transfer core
+
+## USBXHCI Final Intervention Summary
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-final-intervention-summary.ps1
+```
+
+That pass collapses the full spike into the final surviving study targets.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-final-intervention-summary.txt`
+- surviving study targets:
+  - `0x0001B1F0`
+    - primary controller timing core
+  - `0x0003634C`
+    - secondary controller timing core
+  - `0x00015D30`
+    - primary transfer-side event leaf
+
+Interpretation:
+
+- the spike is no longer broad graph exploration
+- the remaining serious targets are just these three bodies, with `0x0003FC38` retained only as the inner timing descendant under `0x0001B1F0`
+- if deeper host-stack work continues, it should proceed in this order:
+  - `0x0001B1F0`
+  - `0x0003634C`
+  - `0x00015D30`

@@ -3478,3 +3478,8 @@ Current read:
   - `ObservationCaptureUsbXhciHost.exe`
 - current `HostEmitter` mode is intentionally an adapter over the bounded lower composite probe, not a real `USBXHCI` emitter yet
 - that gives the spike a stable producer slot before deeper host-side work starts
+- `compare-usbxhci-observation-sessions.ps1` now provides a baseline-vs-candidate report for matched runs
+- current `Kernel` vs default `HostEmitter` comparison is `Comparable` on this machine:
+  - completed chains preserved
+  - malformed rows preserved at zero
+  - cadence-matched chains preserved

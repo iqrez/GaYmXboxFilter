@@ -2810,3 +2810,6 @@ Interpretation:
   - `GaYmTestFeeder\ObservationCaptureUsbXhciHost.cpp`
 - current `HostEmitter` mode is an adapter over the validated composite-parent lower probe
 - that keeps the session and rollup contract stable while the future real `USBXHCI` producer is still being designed
+- session comparison is now scripted through:
+  - `scripts\compare-usbxhci-observation-sessions.ps1`
+- current baseline comparison on this machine reports the default `HostEmitter` adapter as `Comparable` to the kernel source for matched sample-count runs

@@ -2730,3 +2730,22 @@ Interpretation:
 - the branch now defines the matching algorithm instead of leaving timer-arm pairing implicit
 - confidence tiers and unmatched-row accounting are now first-class parts of the design
 - implementation can now start without inventing parser behavior during coding
+
+The spike now also includes a focused `0x0001B1F0` data model:
+
+- `scripts\capture-usbxhci-1b1f0-data-model.ps1`
+
+Current `0x0001B1F0` data model on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-data-model.txt`
+- kernel-side record:
+  - `UsbXhciProbeEvent`
+- parser-side core object:
+  - `CorrelatedChain`
+
+Interpretation:
+
+- the branch now defines the actual in-memory record and parser object model, not just row fields and algorithms
+- the hot path is explicitly constrained to a fixed-size numeric event record
+- the offline parser now has named objects for arms, wait pairs, correlated chains, and rollup summaries

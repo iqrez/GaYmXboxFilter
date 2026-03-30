@@ -2021,3 +2021,102 @@ with immediate follow-on context in:
 - `0x00056D8C`
 
 and `0x0001BAC0` kept as the secondary branch body.
+
+## USBXHCI D59C Follow Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-d59c-follow-assessment.ps1
+```
+
+That read-only pass resolves the current `0x0000D59C` follow-on set:
+
+- trace-heavy side context:
+  - `0x0001BF58`
+- bridge:
+  - `0x0000D210`
+- instrumented side leg:
+  - `0x0001A7FC`
+- short bridge into larger body:
+  - `0x00056D8C`
+- resolved body:
+  - `0x00056DBC`
+
+Observed on this machine:
+
+- `0x0001BF58`
+  - size:
+    - `294`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x0000D210`
+  - size:
+    - `65`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x0000D258`
+- `0x0001A7FC`
+  - size:
+    - `250`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00056D8C`
+  - size:
+    - `42`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x00056DBC`
+- `0x00056DBC`
+  - size:
+    - `2125`
+  - direct internal:
+    - `20`
+  - direct IAT:
+    - `11`
+  - visible direct behavior includes:
+    - `0x00001008`
+    - `0x0000103C`
+    - `0x00001068`
+    - `0x00056B50`
+    - `0x00058AC0`
+    - `KeGetCurrentIrql`
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeQueryTimeIncrement`
+    - `KeReleaseSpinLock`
+    - `ExAllocatePool2`
+
+Interpretation:
+
+- `0x0001BF58`, `0x0000D210`, and `0x0001A7FC` are all demoted for different reasons:
+  - trace-heavy
+  - bridge-only
+  - instrumented
+- `0x00056D8C` is only a short bridge
+- `0x00056DBC` is the first substantive unresolved body remaining on this branch
+
+So the next clean offline target is now:
+
+- `0x00056DBC`
+
+with immediate follow-on context in:
+
+- `0x00001008`
+- `0x0000103C`
+- `0x00001068`
+- `0x00056B50`
+- `0x00058AC0`
+
+and `0x0001BAC0` kept as the secondary branch body.

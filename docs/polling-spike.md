@@ -1665,3 +1665,72 @@ with immediate follow-on context in:
 - `0x00056D8C`
 
 and `0x0001BAC0` kept as the secondary branch body.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-d59c-follow-assessment.ps1`
+
+Current `0x0000D59C` follow-on assessment on this machine:
+
+- compared follow-ons:
+  - `0x0001BF58`
+  - `0x0000D210`
+  - `0x0001A7FC`
+  - `0x00056D8C`
+  - `0x00056DBC`
+- recommended next:
+  - `0x00056DBC`
+
+Why:
+
+- `0x0001BF58`
+  - demotes to trace-heavy side context:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x0000D210`
+  - stays only a bridge:
+    - one direct internal handoff to:
+      - `0x0000D258`
+- `0x0001A7FC`
+  - stays an instrumented side leg:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00056D8C`
+  - is only a short bridge:
+    - one direct internal handoff to:
+      - `0x00056DBC`
+- `0x00056DBC`
+  - is the first substantive body left on this branch:
+    - size `2125`
+    - `20` direct internal
+    - `11` direct IAT
+  - direct imports include:
+    - `KeGetCurrentIrql`
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeQueryTimeIncrement`
+    - `KeReleaseSpinLock`
+    - `DbgkWerCaptureLiveKernelDump`
+    - `ExAllocatePool2`
+
+Interpretation:
+
+- the `0x0000D59C` split is no longer ambiguous
+- three of the four old follow-ons are now clearly demoted:
+  - trace-heavy
+  - instrumented
+  - or bridge-only
+- the next real unresolved body is `0x00056DBC`
+
+So the next clean offline target is now:
+
+- `0x00056DBC`
+
+with immediate follow-on context in:
+
+- `0x00001008`
+- `0x0000103C`
+- `0x00001068`
+- `0x00056B50`
+- `0x00058AC0`
+
+and `0x0001BAC0` kept as the secondary branch body.

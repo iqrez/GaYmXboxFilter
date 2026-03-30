@@ -281,6 +281,266 @@ static VOID GaYmApplyConfiguredJitter(
 }
 #endif
 
+typedef struct _GAYM_OBSERVATION_TIMER_CONTEXT {
+    KEVENT      WakeEvent;
+    volatile LONG CallbackCpu;
+    volatile LONG SignalCount;
+    volatile LONGLONG SignalQpcLike;
+    volatile LONGLONG SignalUnbiasedTime;
+} GAYM_OBSERVATION_TIMER_CONTEXT, *PGAYM_OBSERVATION_TIMER_CONTEXT;
+
+static ULONGLONG GaYmQueryPerformanceCounterLike(VOID)
+{
+    LARGE_INTEGER counter = KeQueryPerformanceCounter(NULL);
+    return (ULONGLONG)counter.QuadPart;
+}
+
+static UCHAR GaYmGetCurrentCpuUchar(VOID)
+{
+    return (UCHAR)KeGetCurrentProcessorNumber();
+}
+
+static VOID GaYmWriteObservationEvent(
+    _Out_ PGAYM_OBSERVATION_EVENT_RECORD Record,
+    _In_ ULONGLONG Sequence,
+    _In_ ULONGLONG TimestampQpcLike,
+    _In_ LONGLONG DueTime,
+    _In_ ULONG TimerId,
+    _In_ ULONG MatchedArmSequenceHint,
+    _In_ ULONG ContextTag,
+    _In_ ULONG ThreadTag,
+    _In_ USHORT ProbePoint,
+    _In_ USHORT NoteFlags,
+    _In_ UCHAR Irql,
+    _In_ UCHAR Cpu,
+    _In_ ULONG Period,
+    _In_ ULONG WaitStatus,
+    _In_ ULONGLONG Aux0)
+{
+    RtlZeroMemory(Record, sizeof(*Record));
+    Record->Sequence = Sequence;
+    Record->TimestampQpcLike = TimestampQpcLike;
+    Record->DueTime = DueTime;
+    Record->TimerId = TimerId;
+    Record->MatchedArmSequenceHint = MatchedArmSequenceHint;
+    Record->ContextTag = ContextTag;
+    Record->ThreadTag = ThreadTag;
+    Record->ProbePoint = ProbePoint;
+    Record->NoteFlags = NoteFlags;
+    Record->Irql = Irql;
+    Record->Cpu = Cpu;
+    Record->Period = Period;
+    Record->WaitStatus = WaitStatus;
+    Record->Aux0 = Aux0;
+}
+
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
+static VOID GaYmObservationTimerCallback(
+    _In_ PEX_TIMER Timer,
+    _In_opt_ PVOID Context)
+{
+    PGAYM_OBSERVATION_TIMER_CONTEXT timerContext = (PGAYM_OBSERVATION_TIMER_CONTEXT)Context;
+
+    UNREFERENCED_PARAMETER(Timer);
+
+    if (timerContext == NULL) {
+        return;
+    }
+
+    InterlockedExchange64(
+        &timerContext->SignalQpcLike,
+        (LONGLONG)GaYmQueryPerformanceCounterLike());
+    InterlockedExchange64(
+        &timerContext->SignalUnbiasedTime,
+        (LONGLONG)KeQueryUnbiasedInterruptTime());
+    InterlockedExchange(
+        &timerContext->CallbackCpu,
+        (LONG)GaYmGetCurrentCpuUchar());
+    InterlockedIncrement(&timerContext->SignalCount);
+    KeSetEvent(&timerContext->WakeEvent, IO_NO_INCREMENT, FALSE);
+}
+
+static NTSTATUS GaYmCaptureObservationSession(
+    _In_ PDEVICE_CONTEXT Ctx,
+    _In_ const GAYM_OBSERVATION_CAPTURE_CONFIG* CaptureConfig,
+    _Out_writes_bytes_(OutputBufferLength) PGAYM_OBSERVATION_EVENT_RECORD OutputRecords,
+    _In_ size_t OutputBufferLength,
+    _Out_ ULONG_PTR* Information)
+{
+    GAYM_OBSERVATION_TIMER_CONTEXT timerContext;
+    PEX_TIMER timer = NULL;
+    const ULONG requiredRecordCount =
+        CaptureConfig->SampleCount * GAYM_OBSERVATION_CAPTURE_EVENTS_PER_SAMPLE;
+    const size_t requiredBytes =
+        ((size_t)requiredRecordCount) * sizeof(GAYM_OBSERVATION_EVENT_RECORD);
+    const ULONG totalDurationMs = CaptureConfig->SampleCount * CaptureConfig->DueTimeMs;
+    const ULONG contextTag = ((ULONG)Ctx->VendorId << 16) | (ULONG)Ctx->ProductId;
+    const ULONG threadTag = (ULONG)(ULONG_PTR)PsGetCurrentThreadId();
+    const LONGLONG dueTime100ns = -((LONGLONG)CaptureConfig->DueTimeMs * 10000ll);
+    ULONGLONG nextSequence = 1;
+    NTSTATUS status = STATUS_SUCCESS;
+    ULONG sampleIndex;
+
+    *Information = 0;
+
+    if (CaptureConfig->SampleCount == 0 ||
+        CaptureConfig->SampleCount > GAYM_OBSERVATION_CAPTURE_MAX_SAMPLES ||
+        CaptureConfig->DueTimeMs == 0 ||
+        totalDurationMs > GAYM_OBSERVATION_CAPTURE_MAX_TOTAL_DURATION_MS) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (KeGetCurrentIrql() > APC_LEVEL) {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+
+    if (OutputBufferLength < requiredBytes) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    RtlZeroMemory(OutputRecords, requiredBytes);
+    RtlZeroMemory(&timerContext, sizeof(timerContext));
+    KeInitializeEvent(&timerContext.WakeEvent, SynchronizationEvent, FALSE);
+    InterlockedExchange(&timerContext.CallbackCpu, -1);
+
+    timer = ExAllocateTimer(GaYmObservationTimerCallback, &timerContext, 0);
+    if (timer == NULL) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    for (sampleIndex = 0; sampleIndex < CaptureConfig->SampleCount; ++sampleIndex) {
+        PGAYM_OBSERVATION_EVENT_RECORD recordsForSample =
+            OutputRecords + (sampleIndex * GAYM_OBSERVATION_CAPTURE_EVENTS_PER_SAMPLE);
+        const ULONG timerId = sampleIndex + 1;
+        const ULONG period = 0;
+        const ULONGLONG armTimestamp = GaYmQueryPerformanceCounterLike();
+        const ULONG armSequenceHint = (ULONG)nextSequence;
+        NTSTATUS waitStatusValue;
+        ULONG callbackCpu;
+        USHORT crossCpuFlags = GAYM_OBSERVATION_NOTE_FLAG_NONE;
+        ULONGLONG waitExitTimestamp;
+        ULONGLONG sampleTimestamp;
+        ULONGLONG callbackQpcLike;
+        ULONGLONG unbiasedSample;
+
+        KeClearEvent(&timerContext.WakeEvent);
+        InterlockedExchange(&timerContext.CallbackCpu, -1);
+        InterlockedExchange(&timerContext.SignalCount, 0);
+        InterlockedExchange64(&timerContext.SignalQpcLike, 0);
+        InterlockedExchange64(&timerContext.SignalUnbiasedTime, 0);
+
+        (VOID)ExSetTimer(timer, dueTime100ns, 0, NULL);
+
+        GaYmWriteObservationEvent(
+            &recordsForSample[0],
+            nextSequence++,
+            armTimestamp,
+            dueTime100ns,
+            timerId,
+            0,
+            contextTag,
+            threadTag,
+            GAYM_OBSERVATION_PROBE_POINT_EX_SET_TIMER,
+            GAYM_OBSERVATION_NOTE_FLAG_ONE_SHOT_TIMER,
+            (UCHAR)KeGetCurrentIrql(),
+            GaYmGetCurrentCpuUchar(),
+            period,
+            0,
+            0);
+
+        GaYmWriteObservationEvent(
+            &recordsForSample[1],
+            nextSequence++,
+            GaYmQueryPerformanceCounterLike(),
+            0,
+            timerId,
+            armSequenceHint,
+            contextTag,
+            threadTag,
+            GAYM_OBSERVATION_PROBE_POINT_WAIT_ENTER,
+            GAYM_OBSERVATION_NOTE_FLAG_NONE,
+            (UCHAR)KeGetCurrentIrql(),
+            GaYmGetCurrentCpuUchar(),
+            0,
+            0,
+            0);
+
+        waitStatusValue = KeWaitForSingleObject(
+            &timerContext.WakeEvent,
+            Executive,
+            KernelMode,
+            FALSE,
+            NULL);
+
+        waitExitTimestamp = GaYmQueryPerformanceCounterLike();
+        callbackCpu = (ULONG)InterlockedCompareExchange(&timerContext.CallbackCpu, -1, -1);
+        callbackQpcLike = (ULONGLONG)InterlockedCompareExchange64(&timerContext.SignalQpcLike, 0, 0);
+        if (callbackCpu != (ULONG)GaYmGetCurrentCpuUchar()) {
+            crossCpuFlags = GAYM_OBSERVATION_NOTE_FLAG_CROSS_CPU;
+        }
+        if (InterlockedCompareExchange(&timerContext.SignalCount, 0, 0) == 0) {
+            crossCpuFlags = (USHORT)(crossCpuFlags | GAYM_OBSERVATION_NOTE_FLAG_UNMATCHED_WAKE);
+        }
+
+        GaYmWriteObservationEvent(
+            &recordsForSample[2],
+            nextSequence++,
+            waitExitTimestamp,
+            0,
+            timerId,
+            armSequenceHint,
+            contextTag,
+            threadTag,
+            GAYM_OBSERVATION_PROBE_POINT_WAIT_EXIT,
+            crossCpuFlags,
+            (UCHAR)KeGetCurrentIrql(),
+            GaYmGetCurrentCpuUchar(),
+            0,
+            (ULONG)waitStatusValue,
+            callbackQpcLike);
+
+        sampleTimestamp = GaYmQueryPerformanceCounterLike();
+        unbiasedSample = KeQueryUnbiasedInterruptTime();
+        GaYmWriteObservationEvent(
+            &recordsForSample[3],
+            nextSequence++,
+            sampleTimestamp,
+            0,
+            timerId,
+            armSequenceHint,
+            contextTag,
+            threadTag,
+            GAYM_OBSERVATION_PROBE_POINT_POST_WAKE_SAMPLE,
+            (USHORT)(crossCpuFlags | GAYM_OBSERVATION_NOTE_FLAG_POST_WAKE_SAMPLE),
+            (UCHAR)KeGetCurrentIrql(),
+            GaYmGetCurrentCpuUchar(),
+            0,
+            0,
+            unbiasedSample);
+    }
+
+    *Information = requiredBytes;
+
+    ExDeleteTimer(timer, TRUE, TRUE, NULL);
+    return status;
+}
+#else
+static NTSTATUS GaYmCaptureObservationSession(
+    _In_ PDEVICE_CONTEXT Ctx,
+    _In_ const GAYM_OBSERVATION_CAPTURE_CONFIG* CaptureConfig,
+    _Out_writes_bytes_(OutputBufferLength) PGAYM_OBSERVATION_EVENT_RECORD OutputRecords,
+    _In_ size_t OutputBufferLength,
+    _Out_ ULONG_PTR* Information)
+{
+    UNREFERENCED_PARAMETER(Ctx);
+    UNREFERENCED_PARAMETER(CaptureConfig);
+    UNREFERENCED_PARAMETER(OutputRecords);
+    UNREFERENCED_PARAMETER(OutputBufferLength);
+    UNREFERENCED_PARAMETER(Information);
+    return STATUS_NOT_SUPPORTED;
+}
+#endif
+
 static UCHAR GaYmCaptureIrpInputSample(
     _In_ PIRP Irp,
     _In_ PIO_STACK_LOCATION Stack,
@@ -1726,6 +1986,53 @@ VOID GaYmEvtCtlIoDeviceControl(
                 ctx->JitterConfig.MinDelayUs,
                 ctx->JitterConfig.MaxDelayUs);
         }
+#else
+        status = STATUS_NOT_SUPPORTED;
+#endif
+        break;
+    }
+
+    case IOCTL_GAYM_CAPTURE_OBSERVATION:
+    {
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
+        PGAYM_OBSERVATION_CAPTURE_CONFIG captureConfig;
+        PGAYM_OBSERVATION_EVENT_RECORD outputRecords;
+        GAYM_OBSERVATION_CAPTURE_CONFIG localConfig;
+        size_t inLen;
+        size_t outLen;
+
+        status = WdfRequestRetrieveInputBuffer(
+            Request,
+            sizeof(GAYM_OBSERVATION_CAPTURE_CONFIG),
+            (PVOID*)&captureConfig,
+            &inLen);
+        if (NT_SUCCESS(status) && inLen != sizeof(GAYM_OBSERVATION_CAPTURE_CONFIG)) {
+            status = STATUS_INVALID_BUFFER_SIZE;
+            break;
+        }
+
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
+        localConfig = *captureConfig;
+        status = WdfRequestRetrieveOutputBuffer(
+            Request,
+            ((size_t)localConfig.SampleCount) *
+                GAYM_OBSERVATION_CAPTURE_EVENTS_PER_SAMPLE *
+                sizeof(GAYM_OBSERVATION_EVENT_RECORD),
+            (PVOID*)&outputRecords,
+            &outLen);
+        if (!NT_SUCCESS(status)) {
+            break;
+        }
+
+        status = GaYmCaptureObservationSession(
+            ctx,
+            &localConfig,
+            outputRecords,
+            outLen,
+            &info);
 #else
         status = STATUS_NOT_SUPPORTED;
 #endif

@@ -3450,3 +3450,25 @@ Interpretation:
 - the first observation pass now has a bounded local producer, a live in-process producer, and a parser/rollup tool
 - the tool now consumes both text rows and the fixed-size binary event record from the current spike design
 - the full live-timer-to-parser path can now be exercised without touching the host stack
+
+## Kernel Capture Status
+
+Added in the current spike:
+
+- `ObservationCaptureKernel.exe`
+- `IOCTL_GAYM_CAPTURE_OBSERVATION`
+- bounded lower-filter timer/wait capture in `GaYmFilter\device.c`
+
+Validated on this machine:
+
+- tools build: `PASS`
+- driver build: `PASS`
+- composite probe package rebuild/sign: `PASS`
+- composite probe install to `oem65.inf`: `PASS`
+- live kernel capture before reboot: `ERROR_INVALID_FUNCTION`
+
+Current read:
+
+- the installed package revision is correct, but the active composite-parent driver image has not been refreshed yet
+- `DEVPKEY_Device_IsRebootRequired = True` is the gating condition
+- the next live validation step is post-reboot `ObservationCaptureKernel.exe -> ObservationRollup.exe`

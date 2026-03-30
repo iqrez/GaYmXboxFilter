@@ -2778,3 +2778,25 @@ Interpretation:
 - the first observation pass now has a bounded local producer, a live in-process producer, and a parser/rollup tool
 - the tool now consumes both text rows and the fixed-size binary event record from the current spike design
 - the full live-timer-to-parser path can now be exercised without touching the host stack
+
+## Kernel Observation Capture
+
+The spike now also includes a bounded kernel-side observation capture path on the lower control object:
+
+- `GaYmTestFeeder\ObservationCaptureKernel.cpp`
+- `ioctl.h`
+- `GaYmFilter\device.c`
+
+Current state on this machine:
+
+- `ObservationCaptureKernel.exe` now requests a bounded observation session through `\\.\GaYmFilterCtl`
+- the lower filter CDO now supports `IOCTL_GAYM_CAPTURE_OBSERVATION` in dev builds
+- the active composite parent probe package was revved to `1.0.1.4` and installed as `oem65.inf`
+- Windows still reports `DEVPKEY_Device_IsRebootRequired = True`
+- same-boot live capture still returns `ERROR_INVALID_FUNCTION`
+
+Interpretation:
+
+- the kernel-side emitter is implemented and packaged
+- tools and driver builds are green on the new shared 64-byte event record ABI
+- the remaining validation gap on this machine is the reboot boundary, not a compile-time or packaging defect

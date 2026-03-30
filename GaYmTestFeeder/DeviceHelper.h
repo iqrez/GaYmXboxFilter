@@ -893,6 +893,36 @@ inline bool SetJitter(HANDLE hDevice, const GAYM_JITTER_CONFIG* config)
         0);
 }
 
+inline bool CaptureObservation(
+    HANDLE hDevice,
+    const GAYM_OBSERVATION_CAPTURE_CONFIG* config,
+    GAYM_OBSERVATION_EVENT_RECORD* records,
+    DWORD recordBytes,
+    DWORD* bytesReturned = nullptr)
+{
+    DWORD bytes = 0;
+
+    if (config == nullptr || records == nullptr) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    const BOOL success = SendIoctlRaw(
+        hDevice,
+        IOCTL_GAYM_CAPTURE_OBSERVATION,
+        (LPVOID)config,
+        sizeof(GAYM_OBSERVATION_CAPTURE_CONFIG),
+        records,
+        recordBytes,
+        &bytes);
+
+    if (bytesReturned != nullptr) {
+        *bytesReturned = bytes;
+    }
+
+    return success != FALSE;
+}
+
 inline bool ApplyOutputState(HANDLE hDevice, const GAYM_OUTPUT_STATE* outputState)
 {
     return SendIoctlRaw(

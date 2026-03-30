@@ -384,3 +384,21 @@ interval_us,parent_hz,upper_hz
 ```
 
 and disables the lower pacing experiment again when the sweep finishes.
+
+For repeated captures, it now also supports:
+
+```text
+GaYmCLI ratecurve-stats [runs] [device_index] [sample_ms] [output_csv]
+```
+
+which emits aggregate CSV rows of:
+
+```text
+interval_us,runs,parent_mean_hz,parent_min_hz,parent_max_hz,upper_mean_hz,upper_min_hz,upper_max_hz
+```
+
+First validation capture with `ratecurve-stats 2 0 500` showed:
+
+- parent cadence is relatively stable once intervals reach the `4000-5000 us` range
+- upper cadence remains visibly noisier over the same range
+- repeated captures are therefore more informative than single-pass sweeps when characterizing the upper transfer curve

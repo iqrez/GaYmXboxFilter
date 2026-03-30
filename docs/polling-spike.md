@@ -298,6 +298,7 @@ Supported commands in maintainer builds:
 - `GaYmCLI rate upper <hz>`
 - `GaYmCLI rate off`
 - `GaYmCLI ratecurve [device_index] [sample_ms] [output_csv]`
+- `GaYmCLI ratecurve-stats [runs] [device_index] [sample_ms] [output_csv]`
 
 Observed validation results:
 
@@ -329,6 +330,33 @@ interval_us,parent_hz,upper_hz
 ```
 
 and disables the lower pacing experiment again when the sweep finishes.
+
+The next layer now exists too:
+
+- `ratecurve-stats` reruns the same sweep multiple times
+- it emits mean/min/max per interval instead of a single noisy sample
+- it also restores the lower pacing experiment to `off` when complete
+
+First validation capture:
+
+```text
+GaYmCLI ratecurve-stats 2 0 500
+```
+
+Observed aggregated output:
+
+| Interval | Parent mean | Parent min-max | Upper mean | Upper min-max |
+| --- | ---: | ---: | ---: | ---: |
+| `3500 us` | `250.0` | `248.0-252.0` | `224.0` | `168.0-280.0` |
+| `4000 us` | `244.0` | `242.0-246.0` | `206.0` | `150.0-262.0` |
+| `4500 us` | `217.0` | `212.0-222.0` | `175.0` | `112.0-238.0` |
+| `5000 us` | `212.0` | `204.0-220.0` | `178.0` | `132.0-224.0` |
+
+Interpretation:
+
+- the parent-side cadence is comparatively stable once the interval gets large enough to matter
+- the upper-visible cadence remains much noisier than the parent counters
+- repeated sweeps are therefore necessary before claiming a stable transfer curve at the high end
 
 ## Guardrails
 

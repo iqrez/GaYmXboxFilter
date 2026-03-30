@@ -231,6 +231,7 @@ static void PrintUsage()
     printf("  GaYmCLI rate upper <hz>            Tune lower pacing toward an upper cadence target\n");
     printf("  GaYmCLI rate off                   Disable lower pacing experiment\n");
     printf("  GaYmCLI ratecurve [device_index] [sample_ms] [output_csv]\n");
+    printf("  GaYmCLI ratecurve-stats [runs] [device_index] [sample_ms] [output_csv]\n");
 #endif
     printf("  GaYmCLI test  [device_index]       Inject a test report\n");
     printf("  GaYmCLI report [device_index] <btn0> <btn1> <dpad> <lt> <rt> <lx> <ly> <rx> <ry>\n");
@@ -718,6 +719,17 @@ struct RateCandidateMeasurement {
     double errorHz = 0.0;
 };
 
+struct RateCurveAggregateMeasurement {
+    ULONG intervalUs = 0;
+    ULONG sampleCount = 0;
+    double parentSumHz = 0.0;
+    double upperSumHz = 0.0;
+    double parentMinHz = std::numeric_limits<double>::max();
+    double parentMaxHz = std::numeric_limits<double>::lowest();
+    double upperMinHz = std::numeric_limits<double>::max();
+    double upperMaxHz = std::numeric_limits<double>::lowest();
+};
+
 static const ULONG kRateSweepCandidatesUs[] = {
     0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000
 };
@@ -999,6 +1011,73 @@ static bool WriteRateCurveCsv(
     return true;
 }
 
+static bool WriteRateCurveStatsCsv(
+    const char* path,
+    const std::vector<RateCurveAggregateMeasurement>& measurements)
+{
+    FILE* file = nullptr;
+
+    if (fopen_s(&file, path, "w") != 0 || file == nullptr) {
+        return false;
+    }
+
+    std::fprintf(
+        file,
+        "interval_us,runs,parent_mean_hz,parent_min_hz,parent_max_hz,upper_mean_hz,upper_min_hz,upper_max_hz\n");
+    for (const RateCurveAggregateMeasurement& measurement : measurements) {
+        const double parentMeanHz = measurement.sampleCount != 0
+            ? measurement.parentSumHz / static_cast<double>(measurement.sampleCount)
+            : 0.0;
+        const double upperMeanHz = measurement.sampleCount != 0
+            ? measurement.upperSumHz / static_cast<double>(measurement.sampleCount)
+            : 0.0;
+        std::fprintf(
+            file,
+            "%lu,%lu,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f\n",
+            measurement.intervalUs,
+            measurement.sampleCount,
+            parentMeanHz,
+            measurement.parentMinHz,
+            measurement.parentMaxHz,
+            upperMeanHz,
+            measurement.upperMinHz,
+            measurement.upperMaxHz);
+    }
+
+    std::fclose(file);
+    return true;
+}
+
+static bool CaptureRateCurveMeasurements(
+    DWORD settleMs,
+    DWORD sampleMs,
+    int deviceIndex,
+    std::vector<RateCandidateMeasurement>* measurements)
+{
+    measurements->clear();
+    measurements->reserve(sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]));
+
+    for (ULONG intervalUs : kRateSweepCandidatesUs) {
+        RateCandidateMeasurement measurement = {};
+
+        if (!EvaluateRateCandidate(
+                intervalUs,
+                RateExperimentTarget::Upper,
+                0.0,
+                settleMs,
+                sampleMs,
+                deviceIndex,
+                &measurement,
+                false)) {
+            return false;
+        }
+
+        measurements->push_back(measurement);
+    }
+
+    return true;
+}
+
 static void CmdRateCurve(int argc, char* argv[])
 {
     constexpr DWORD kSettleMs = 200;
@@ -1031,24 +1110,17 @@ static void CmdRateCurve(int argc, char* argv[])
 
     std::printf("interval_us,parent_hz,upper_hz\n");
 
-    for (ULONG intervalUs : kRateSweepCandidatesUs) {
-        RateCandidateMeasurement measurement = {};
+    if (!CaptureRateCurveMeasurements(
+            kSettleMs,
+            static_cast<DWORD>(sampleMs),
+            static_cast<int>(deviceIndex),
+            &measurements)) {
+        std::fprintf(stderr, "Rate curve capture failed (error %lu).\n", GetLastError());
+        ApplyLowerPacingIntervalUs(0);
+        return;
+    }
 
-        if (!EvaluateRateCandidate(
-                intervalUs,
-                RateExperimentTarget::Upper,
-                0.0,
-                kSettleMs,
-                static_cast<DWORD>(sampleMs),
-                static_cast<int>(deviceIndex),
-                &measurement,
-                false)) {
-            std::fprintf(stderr, "Rate curve capture failed (error %lu).\n", GetLastError());
-            ApplyLowerPacingIntervalUs(0);
-            return;
-        }
-
-        measurements.push_back(measurement);
+    for (const RateCandidateMeasurement& measurement : measurements) {
         std::printf(
             "%lu,%.1f,%.1f\n",
             measurement.intervalUs,
@@ -1069,6 +1141,110 @@ static void CmdRateCurve(int argc, char* argv[])
         std::fprintf(stderr, "CSV written to %s\n", outputPath);
     }
 }
+
+static void CmdRateCurveStats(int argc, char* argv[])
+{
+    constexpr DWORD kSettleMs = 200;
+    long runCount = 3;
+    long deviceIndex = 0;
+    long sampleMs = 1000;
+    const char* outputPath = nullptr;
+    std::vector<RateCurveAggregateMeasurement> aggregate;
+    std::vector<RateCandidateMeasurement> measurements;
+
+    if (argc >= 3 && !ParseLongArgument(argv[2], 1, 20, &runCount)) {
+        std::fprintf(stderr, "Invalid run count: %s\n", argv[2]);
+        return;
+    }
+
+    if (argc >= 4 && !ParseLongArgument(argv[3], 0, 64, &deviceIndex)) {
+        std::fprintf(stderr, "Invalid device index: %s\n", argv[3]);
+        return;
+    }
+
+    if (argc >= 5 && !ParseLongArgument(argv[4], 250, 10000, &sampleMs)) {
+        std::fprintf(stderr, "Invalid sample duration: %s\n", argv[4]);
+        return;
+    }
+
+    if (argc >= 6) {
+        outputPath = argv[5];
+    }
+
+    aggregate.reserve(sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]));
+    for (ULONG intervalUs : kRateSweepCandidatesUs) {
+        RateCurveAggregateMeasurement measurement = {};
+        measurement.intervalUs = intervalUs;
+        aggregate.push_back(measurement);
+    }
+
+    std::fprintf(
+        stderr,
+        "Capturing aggregated rate curve for upper device index %ld, sample window %ld ms, runs %ld\n",
+        deviceIndex,
+        sampleMs,
+        runCount);
+
+    for (long runIndex = 0; runIndex < runCount; ++runIndex) {
+        std::fprintf(stderr, "  run %ld/%ld\n", runIndex + 1, runCount);
+
+        if (!CaptureRateCurveMeasurements(
+                kSettleMs,
+                static_cast<DWORD>(sampleMs),
+                static_cast<int>(deviceIndex),
+                &measurements)) {
+            std::fprintf(stderr, "Rate curve stats capture failed (error %lu).\n", GetLastError());
+            ApplyLowerPacingIntervalUs(0);
+            return;
+        }
+
+        for (size_t index = 0; index < measurements.size(); ++index) {
+            const RateCandidateMeasurement& measurement = measurements[index];
+            RateCurveAggregateMeasurement& entry = aggregate[index];
+            entry.sampleCount += 1;
+            entry.parentSumHz += measurement.parentHz;
+            entry.upperSumHz += measurement.upperHz;
+            entry.parentMinHz = std::min(entry.parentMinHz, measurement.parentHz);
+            entry.parentMaxHz = std::max(entry.parentMaxHz, measurement.parentHz);
+            entry.upperMinHz = std::min(entry.upperMinHz, measurement.upperHz);
+            entry.upperMaxHz = std::max(entry.upperMaxHz, measurement.upperHz);
+        }
+    }
+
+    if (!ApplyLowerPacingIntervalUs(0)) {
+        std::fprintf(stderr, "Warning: failed to disable lower pacing experiment (error %lu).\n", GetLastError());
+    }
+
+    std::printf(
+        "interval_us,runs,parent_mean_hz,parent_min_hz,parent_max_hz,upper_mean_hz,upper_min_hz,upper_max_hz\n");
+    for (const RateCurveAggregateMeasurement& measurement : aggregate) {
+        const double parentMeanHz = measurement.sampleCount != 0
+            ? measurement.parentSumHz / static_cast<double>(measurement.sampleCount)
+            : 0.0;
+        const double upperMeanHz = measurement.sampleCount != 0
+            ? measurement.upperSumHz / static_cast<double>(measurement.sampleCount)
+            : 0.0;
+        std::printf(
+            "%lu,%lu,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f\n",
+            measurement.intervalUs,
+            measurement.sampleCount,
+            parentMeanHz,
+            measurement.parentMinHz,
+            measurement.parentMaxHz,
+            upperMeanHz,
+            measurement.upperMinHz,
+            measurement.upperMaxHz);
+    }
+
+    if (outputPath != nullptr) {
+        if (!WriteRateCurveStatsCsv(outputPath, aggregate)) {
+            std::fprintf(stderr, "Failed to write stats CSV export: %s\n", outputPath);
+            return;
+        }
+
+        std::fprintf(stderr, "Stats CSV written to %s\n", outputPath);
+    }
+}
 #else
 static void CmdRate(int argc, char* argv[])
 {
@@ -1082,6 +1258,13 @@ static void CmdRateCurve(int argc, char* argv[])
     UNREFERENCED_PARAMETER(argc);
     UNREFERENCED_PARAMETER(argv);
     std::fprintf(stderr, "The ratecurve command is not available in the release bundle profile.\n");
+}
+
+static void CmdRateCurveStats(int argc, char* argv[])
+{
+    UNREFERENCED_PARAMETER(argc);
+    UNREFERENCED_PARAMETER(argv);
+    std::fprintf(stderr, "The ratecurve-stats command is not available in the release bundle profile.\n");
 }
 #endif
 
@@ -1602,6 +1785,7 @@ int main(int argc, char* argv[])
     else if (_stricmp(cmd, "jitter") == 0) CmdJitter(argc, argv);
     else if (_stricmp(cmd, "rate")   == 0) CmdRate(argc, argv);
     else if (_stricmp(cmd, "ratecurve") == 0) CmdRateCurve(argc, argv);
+    else if (_stricmp(cmd, "ratecurve-stats") == 0) CmdRateCurveStats(argc, argv);
     else if (_stricmp(cmd, "test")   == 0) CmdTest(argc, argv);
     else if (_stricmp(cmd, "report") == 0) CmdReport(argc, argv);
     else {

@@ -2589,3 +2589,38 @@ Interpretation:
 - the strongest candidates split cleanly into:
   - controller timing/orchestration bodies
   - transfer hot-path spinlock bodies
+
+## USBXHCI Controller Timing Family Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-controller-timing-family-assessment.ps1
+```
+
+That pass compares the two highest-ranked controller timing bodies directly.
+
+Observed on this machine:
+
+- primary bodies:
+  - `0x0001B1F0`
+  - `0x0003634C`
+- output:
+  - `out\dev\usbxhci-controller-timing-family-assessment.txt`
+- shared direct callees:
+  - `0x0000D210`
+  - `0x00019AC8`
+  - `0x0001A724`
+  - `0x0001BA28`
+  - `0x0002E390`
+
+Interpretation:
+
+- the two controller timing bodies do share a callee spine
+- but the shared descendants mostly demote to:
+  - wrappers and bridges
+  - trace legs
+  - debug-side context
+- that means the best controller-family intervention points are still the parent bodies themselves:
+  - `0x0001B1F0`
+  - `0x0003634C`

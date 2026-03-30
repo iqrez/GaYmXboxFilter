@@ -2080,3 +2080,33 @@ Interpretation:
   - controller timing/orchestration bodies
   - transfer hot-path spinlock bodies
 - if this spike moves beyond read-only recon, these are the first bodies worth deeper offline study or controlled patchability analysis
+
+The spike now also includes a controller-family assessment:
+
+- `scripts\capture-usbxhci-controller-timing-family-assessment.ps1`
+
+Current controller-family result on this machine:
+
+- output:
+  - `out\dev\usbxhci-controller-timing-family-assessment.txt`
+- primary bodies:
+  - `0x0001B1F0`
+  - `0x0003634C`
+- shared direct callees:
+  - `0x0000D210`
+  - `0x00019AC8`
+  - `0x0001A724`
+  - `0x0001BA28`
+  - `0x0002E390`
+
+Interpretation:
+
+- the two controller timing bodies do share a callee spine
+- but that shared spine mostly demotes to:
+  - wrappers and bridges
+  - trace legs
+  - debug-side context
+- it does not expose a better deeper timing body than the parents themselves
+- the controller-family intervention order should stay:
+  - `0x0001B1F0`
+  - `0x0003634C`

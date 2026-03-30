@@ -1975,3 +1975,56 @@ Interpretation:
   - changing the traversal rules
   - seeding a different subgraph
   - or leaving read-only recon and moving into a different kind of experiment
+
+The spike now also includes feature-candidate closure:
+
+- `scripts\capture-usbxhci-feature-closure.ps1`
+
+Current feature-candidate closure result on this machine:
+
+- feature candidates:
+  - `70`
+- baseline visited:
+  - `927`
+- missing feature seeds before closure:
+  - `15`
+- closure output:
+  - `out\dev\usbxhci-feature-closure.txt`
+  - `out\dev\usbxhci-feature-closure-walk.txt`
+- combined visited after closure:
+  - `963`
+- still missing feature candidates:
+  - `0`
+
+Interpretation:
+
+- all current feature-map and cluster-profile candidates are now covered
+- the remaining uncovered space after that point was general runtime-function space, not unresolved feature candidates
+
+The spike now also includes whole-runtime closure:
+
+- `scripts\capture-usbxhci-runtime-closure.ps1`
+
+Current whole-runtime closure result on this machine:
+
+- runtime functions:
+  - `1294`
+- baseline walks:
+  - `2`
+- baseline visited:
+  - `963`
+- missing runtime seeds before closure:
+  - `331`
+- closure output:
+  - `out\dev\usbxhci-runtime-closure.txt`
+  - `out\dev\usbxhci-runtime-closure-walk.txt`
+- combined visited after closure:
+  - `1294`
+- still missing runtime functions:
+  - `0`
+
+Interpretation:
+
+- the read-only runtime census is now complete for `USBXHCI.SYS` `10.0.26100.2454`
+- every runtime function in the image has now been entered at least once under the current deep-pass model
+- there is no remaining untested target set inside this image for the present read-only workflow

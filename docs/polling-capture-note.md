@@ -2467,3 +2467,68 @@ Interpretation:
   - broader seed selection
   - different traversal rules
   - or a different class of experiment beyond this read-only call-map pass
+
+## USBXHCI Feature Closure
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-feature-closure.ps1
+```
+
+That pass closes the remaining uncovered feature-map and cluster-profile candidates.
+
+Observed on this machine:
+
+- feature candidates:
+  - `70`
+- baseline visited:
+  - `927`
+- missing feature seeds before closure:
+  - `15`
+- outputs:
+  - `out\dev\usbxhci-feature-closure.txt`
+  - `out\dev\usbxhci-feature-closure-walk.txt`
+- combined visited after closure:
+  - `963`
+- still missing feature candidates:
+  - `0`
+
+Interpretation:
+
+- all current feature candidates are now covered
+- after this point, the only remaining uncovered space is general runtime-function space
+
+## USBXHCI Runtime Closure
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-runtime-closure.ps1
+```
+
+That pass expands the closure from feature candidates to the whole runtime-function table.
+
+Observed on this machine:
+
+- runtime functions:
+  - `1294`
+- baseline walks:
+  - `2`
+- baseline visited:
+  - `963`
+- missing runtime seeds before closure:
+  - `331`
+- outputs:
+  - `out\dev\usbxhci-runtime-closure.txt`
+  - `out\dev\usbxhci-runtime-closure-walk.txt`
+- combined visited after closure:
+  - `1294`
+- still missing runtime functions:
+  - `0`
+
+Interpretation:
+
+- the current read-only census is now complete for `USBXHCI.SYS` `10.0.26100.2454`
+- every runtime function in the image has now been entered at least once under the current deep-pass model
+- there is no remaining untested runtime-function target set for this workflow

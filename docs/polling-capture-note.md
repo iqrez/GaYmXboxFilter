@@ -1534,3 +1534,55 @@ with immediate follow-on context in:
 - `0x00008180`
 
 and `0x000077FC` kept as the upstream transfer-side feeder body.
+
+## USBXHCI Transfer Follow Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-transfer-follow-assessment.ps1
+```
+
+That read-only pass compares the two direct local follow-on bodies from `0x00007D60`:
+
+- `0x00008140`
+- `0x00008180`
+
+Observed on this machine:
+
+- `0x00008140`
+  - size:
+    - `55`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `0`
+  - visible direct behavior:
+    - `0x00008DA0`
+- `0x00008180`
+  - size:
+    - `196`
+  - direct internal:
+    - `3`
+  - direct IAT:
+    - `0`
+  - visible direct behavior:
+    - `0x00008E74` (`2` calls)
+    - `0x00046530`
+
+Interpretation:
+
+- the `0x00007D60` follow-on split is not balanced
+- `0x00008140` looks like a small edge helper
+- `0x00008180` is the denser and more promising continuation
+
+So the next clean offline target is now:
+
+- `0x00008180`
+
+with immediate follow-on context in:
+
+- `0x00008E74`
+- `0x00046530`
+
+and `0x00008140` kept only as the thinner sibling edge.

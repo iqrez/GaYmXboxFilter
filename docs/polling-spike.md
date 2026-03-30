@@ -1266,3 +1266,47 @@ with immediate follow-on context in:
 - `0x00008180`
 
 and `0x000077FC` kept as the upstream transfer-side feeder body.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-transfer-follow-assessment.ps1`
+
+Current `0x00007D60` follow-on assessment on this machine:
+
+- compared follow-ons:
+  - `0x00008140`
+  - `0x00008180`
+- recommended next:
+  - `0x00008180`
+
+Why:
+
+- `0x00008140`
+  - is tiny:
+    - size `55`
+  - only one direct internal edge:
+    - `0x00008DA0`
+- `0x00008180`
+  - is materially denser:
+    - size `196`
+    - `3` direct internal edges
+  - fan-out includes:
+    - `0x00008E74` (`2` calls)
+    - `0x00046530`
+
+Interpretation:
+
+- the `0x00007D60` follow-on split does not produce two equally interesting branches
+- `0x00008140` looks like a thin edge helper
+- `0x00008180` is the only one that still has enough structure to justify deeper offline work
+
+So the next clean offline target is now:
+
+- `0x00008180`
+
+with immediate follow-on context in:
+
+- `0x00008E74`
+- `0x00046530`
+
+and `0x00008140` kept only as the thinner sibling edge.

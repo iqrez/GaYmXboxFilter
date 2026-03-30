@@ -2195,3 +2195,68 @@ Current controller-family leaf set is now:
   - leaf timing descendant `0x0003FC38`
 - secondary:
   - `0x0003634C`
+
+The spike now also includes a transfer-family assessment:
+
+- `scripts\capture-usbxhci-transfer-family-assessment.ps1`
+
+Current transfer-family result on this machine:
+
+- helper-heavy pair:
+  - `0x0001144D`
+  - `0x00011E20`
+- event-dispatch pair:
+  - `0x000038CC`
+  - `0x000077FC`
+
+Interpretation:
+
+- helper-heavy shared spine:
+  - `0x00010440`
+  - `0x000049B4`
+  - `0x00058B00`
+- only `0x00010440` remains substantive on that side
+- event-dispatch shared spine:
+  - `0x00003C70`
+  - `0x00003FA0`
+  - `0x00004124`
+  - `0x000049B4`
+  - `0x00005BC0`
+- that side does not expose a better shared deeper body
+- keep `0x000038CC` and `0x000077FC` as the current event-side leaves
+
+The spike now also includes a `0x00010440` helper-branch assessment:
+
+- `scripts\capture-usbxhci-10440-helper-branch-assessment.ps1`
+
+Current `0x00010440` branch result on this machine:
+
+- output:
+  - `out\dev\usbxhci-10440-helper-branch-assessment.txt`
+- reviewed branch nodes:
+  - `0x00010D60`
+  - `0x00058B00`
+  - `0x00058EC0`
+  - `0x00011240`
+  - `0x00022E7C`
+  - `0x000076A0`
+  - `0x00010CD8`
+  - `0x000111C4`
+  - `0x00012700`
+  - `0x000148B4`
+  - `0x0002F21C`
+  - `0x0003C8C4`
+
+Interpretation:
+
+- `0x00010D60` is the only substantive transfer-side descendant under `0x00010440`
+- the other direct descendants demote into:
+  - trace legs
+  - control/assert context
+  - stubs
+  - opaque slabs
+  - side bridges
+- the helper-heavy transfer subfamily leaf set is now:
+  - `0x0001144D`
+  - `0x00011E20`
+  - leaf body `0x00010D60`

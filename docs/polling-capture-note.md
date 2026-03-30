@@ -672,3 +672,79 @@ Representative candidates:
 Interpretation:
 
 - the read-only recon now separates likely hot transfer/ring logic from controller orchestration and pageable interrupter code well enough to guide deeper offline study
+
+## USBXHCI Targeted Transfer And Ring Call Map
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-targeted-callmap.ps1
+```
+
+That read-only pass narrows the offline map further by:
+
+- taking only the top transfer and ring candidates from the current cluster profile
+- scanning those functions for direct `E8` relative internal calls
+- scanning those functions for direct RIP-relative `CALL/JMP` IAT sites
+- keeping the result function-oriented instead of trying to model the whole image
+
+Observed on this machine:
+
+- selected target functions:
+  - `8`
+- selected features:
+  - `Transfer`
+  - `Ring`
+- captured call sites:
+  - `92`
+
+Top transfer findings:
+
+- `0x0000320D-0x000038AE`
+  - strongest direct internal fan-out to:
+    - `0x00058B00` (`6` calls)
+    - `0x00006BA0` (`3` calls)
+  - imported edges dominated by:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+- `0x000077FC-0x00007B61`
+  - narrower direct fan-out into nearby helpers:
+    - `0x00003FA0`
+    - `0x00003C70`
+    - `0x00004124`
+  - imported edges still dominated by:
+    - `KeReleaseSpinLock`
+    - `KeAcquireSpinLockRaiseToDpc`
+- `0x0001144D-0x00011916`
+  - strongest direct internal fan-out to:
+    - `0x00010440` (`3` calls)
+    - `0x00012400` (`2` calls)
+  - imported edges again dominated by:
+    - `KeReleaseSpinLock`
+    - `KeAcquireSpinLockRaiseToDpc`
+
+Top ring findings:
+
+- `0x000528DC-0x00052A6B`
+  - one direct internal edge to:
+    - `0x00052254`
+  - imports dominated by:
+    - `DbgPrintEx`
+- `0x00052A74-0x00052C46`
+  - one direct internal edge to:
+    - `0x00052254`
+  - imports dominated by:
+    - `DbgPrintEx`
+    - one direct `KeStallExecutionProcessor` site
+- `0x00052F78-0x00053280`
+  - one same-feature edge to:
+    - `Ring:0x0005346C`
+  - imports dominated by:
+    - `DbgPrintEx`
+
+Interpretation:
+
+- the top transfer-event regions look like the better offline study target if the goal is to understand timing-critical host behavior
+- they connect into shared `.text` helper code and repeatedly touch the expected spinlock imports
+- the narrowed ring/TRB regions look more localized and debug-heavy
+- so if there is a future deep offline pass, it should start from the transfer clusters and the helper RVAs they converge on before spending time on the TRB logging bands

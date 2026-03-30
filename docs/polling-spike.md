@@ -598,3 +598,52 @@ Interpretation:
 - the read-only map is now good enough to distinguish likely hot transfer logic from controller-side orchestration and pageable interrupter/work-item code
 - if a deeper offline reverse-engineering pass is pursued, the highest-value next targets are the transfer and ring clusters above, not the entire image
 - the host-stack experiment is still not justified yet, but the candidate scope is now small enough to make targeted offline study realistic
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-targeted-callmap.ps1`
+
+Current targeted call-map result on this machine:
+
+- selected features:
+  - `Transfer`
+  - `Ring`
+- selected top candidates:
+  - `4` per feature
+- captured direct call sites:
+  - `92`
+
+Key targeted findings:
+
+- top transfer-event clusters are not isolated islands
+  - `0x0000320D-0x000038AE` fans into shared `.text` helpers, especially:
+    - `0x00058B00`
+    - `0x00006BA0`
+    - `0x00004124`
+    - `0x000042A0`
+  - `0x0001144D-0x00011916` similarly fans into:
+    - `0x00010440`
+    - `0x00012400`
+    - `0x00011B00`
+    - `0x00058B00`
+  - direct imported edges remain dominated by:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+- the selected ring clusters are much more self-contained and debug-oriented
+  - `0x000528DC-0x00052A6B`, `0x00052A74-0x00052C46`, and `0x0005346C-0x000535A4` each have one direct internal edge back into the nearby `0x00052254` helper
+  - `0x00052F78-0x00053280` has the only same-feature edge in the narrowed set:
+    - `Ring:0x0005346C`
+  - imported edges are overwhelmingly:
+    - `DbgPrintEx`
+  - with one notable direct `HAL.dll!KeStallExecutionProcessor` site in:
+    - `0x00052A74-0x00052C46`
+
+Interpretation:
+
+- the transfer-event regions remain the strongest offline study targets if the goal is timing or cadence control, because they connect to shared nonpageable helper code and hot spinlock paths
+- the top ring/TRB regions look more like localized command/diagnostic machinery than the best first place to search for a host-level polling lever
+- if a future offline reverse-engineering pass goes deeper, the next narrow target set should start with:
+  - `0x0000320D-0x000038AE`
+  - `0x000077FC-0x00007B61`
+  - `0x0001144D-0x00011916`
+  - plus the shared helper anchors they call most often

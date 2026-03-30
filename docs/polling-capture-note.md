@@ -827,3 +827,107 @@ Interpretation:
   - `0x00010440`
   - `0x00004124`
 - not the TRB/debug ring bands, and not `0x00058B00` by itself
+
+## USBXHCI Helper Micro Map
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-helper-micromap.ps1
+```
+
+That read-only pass narrows the scope again by:
+
+- taking only:
+  - `0x00006BA0`
+  - `0x00010440`
+  - `0x00004124`
+- decoding their unwind headers
+- listing nearby runtime-function neighbors from `.pdata`
+- mapping one second-hop layer from their strongest internal callees
+
+Observed on this machine:
+
+- resolved helpers:
+  - `3`
+- neighbor radius:
+  - `2`
+- second-hop target budget per helper:
+  - `4`
+
+Key local structure:
+
+- `0x00006BA0`
+  - neighbors:
+    - `0x00006A44`
+    - `0x00006E74`
+    - `0x00007160`
+  - still imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `IoQueueWorkItem`
+    - `KeGetCurrentIrql`
+  - second-hop branches include:
+    - `0x00006E74`
+    - `0x00007160`
+    - `0x00040D38`
+- `0x00010440`
+  - neighbors:
+    - `0x000103CF`
+    - `0x00010CD8`
+    - `0x00010D60`
+  - still imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `KfRaiseIrql`
+    - `KeLowerIrql`
+    - `IoFreeMdl`
+  - second-hop branches include:
+    - `0x00011240`
+    - `0x00022E7C`
+    - `0x00058EC0`
+- `0x00004124`
+  - has one direct internal edge to:
+    - `0x00058B00`
+  - and one import:
+    - `WppAutoLogTrace`
+  - so it looks much thinner than the other two helpers
+
+Important second-hop distinctions:
+
+- `0x00006E74`
+  - nonpageable
+  - no direct IAT edges in this pass
+  - pushes further into:
+    - `0x00008454`
+    - `0x00054F74`
+- `0x00040D38`
+  - imports:
+    - `KeBugCheckEx`
+    - `KeGetCurrentProcessorNumberEx`
+  - so it reads more like a control/assert branch than a hot transfer body
+- `0x00011240`
+  - collapses back into:
+    - `0x00058B00`
+  - plus:
+    - `WppAutoLogTrace`
+- `0x00022E7C`
+  - branches into:
+    - `0x0001A7FC`
+    - `0x0000DA20`
+    - `0x0000DC30`
+  - imports:
+    - `KeGetCurrentIrql`
+    - `VslDeleteSecureSection`
+
+Interpretation:
+
+- the helper tier is now split into two serious inner bodies:
+  - `0x00006BA0`
+  - `0x00010440`
+- `0x00004124` is better treated as a thin wrapper than a main timing candidate
+- the best next offline targets are:
+  - `0x00006E74`
+  - `0x00011240`
+  - `0x00022E7C`
+- with `0x00058B00` kept only as a shared routing landmark

@@ -706,3 +706,92 @@ Interpretation:
   - `0x00010440`
   - `0x00004124`
   - with `0x00058B00` treated as a likely shared dispatch endpoint rather than the main body of interest
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-helper-micromap.ps1`
+
+Current micro-map result on this machine:
+
+- requested helpers:
+  - `0x00006BA0`
+  - `0x00010440`
+  - `0x00004124`
+- resolved helpers:
+  - `3`
+- neighbor radius:
+  - `2`
+- second-hop targets per helper:
+  - `4`
+
+Key structural findings:
+
+- `0x00006BA0` is a real local body, not just a jump point
+  - sits inside a contiguous local band with:
+    - `0x00006A44`
+    - `0x00006E74`
+    - `0x00007160`
+  - still imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `IoQueueWorkItem`
+    - `KeGetCurrentIrql`
+  - second-hop shows two distinct directions:
+    - local continuation into `0x00006E74` and `0x00007160`
+    - separate control/error branch into `0x00040D38`
+- `0x00010440` is the other substantial inner body
+  - sits in a larger local band with:
+    - `0x000103CF`
+    - `0x00010CD8`
+    - `0x00010D60`
+  - still imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `KfRaiseIrql`
+    - `KeLowerIrql`
+    - `IoFreeMdl`
+  - second-hop splits into:
+    - local continuation through `0x00011240`
+    - a different control-plane looking branch through `0x00022E7C`
+- `0x00004124` is much thinner than the other two
+  - one direct internal edge to `0x00058B00`
+  - one `WppAutoLogTrace` import
+  - nearby neighbors include `0x000042A0`, which was already visible from the transfer-event layer
+
+Most important second-hop details:
+
+- `0x00006E74`
+  - nonpageable
+  - no direct IAT edges in this pass
+  - pushes further into:
+    - `0x00008454`
+    - `0x00054F74`
+- `0x00040D38`
+  - looks more like an assert/control path
+  - imports:
+    - `KeBugCheckEx`
+    - `KeGetCurrentProcessorNumberEx`
+- `0x00011240`
+  - collapses back into `0x00058B00`
+  - plus `WppAutoLogTrace`
+- `0x00022E7C`
+  - branches into:
+    - `0x0001A7FC`
+    - `0x0000DA20`
+    - `0x0000DC30`
+  - imports:
+    - `KeGetCurrentIrql`
+    - `VslDeleteSecureSection`
+
+Interpretation:
+
+- the helper tier does not fan back out randomly
+- it narrows to two real bodies of interest:
+  - `0x00006BA0`
+  - `0x00010440`
+- `0x00004124` is better treated as a thin wrapper than a primary reverse-engineering target
+- the most valuable next offline targets are now:
+  - `0x00006E74`
+  - `0x00011240`
+  - `0x00022E7C`
+  - and the shared thunk endpoint `0x00058B00` only as a routing landmark

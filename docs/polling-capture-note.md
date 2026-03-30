@@ -2415,3 +2415,55 @@ Interpretation:
 So the next clean offline target is now:
 
 - `0x0001C090`
+
+## USBXHCI Exhaustive Walk
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-exhaustive-walk.ps1
+```
+
+That pass turns the current single-target workflow into a bounded exhaustive walk.
+
+Observed on this machine:
+
+- seed set:
+  - `0x0001BC34`
+- output:
+  - `out\dev\usbxhci-exhaustive-walk.txt`
+- visited targets:
+  - `927`
+- class breakdown:
+  - `substantive=335`
+  - `mixed=294`
+  - `trace=141`
+  - `bridge=61`
+  - `stub=44`
+  - `opaque=22`
+  - `path-string=16`
+  - `thunk=10`
+  - `etw=4`
+- traversal mode:
+  - direct internal targets from substantive and bridge nodes
+  - plus substantial same-band neighbors
+
+Coverage check:
+
+- the exhaustive walk includes the earlier hot-path anchors:
+  - `0x00006BA0`
+  - `0x00006E74`
+  - `0x000077FC`
+  - `0x00007D60`
+  - `0x0001AD7C`
+  - `0x0001B1F0`
+  - `0x00056DBC`
+
+Interpretation:
+
+- the current read-only traversal frontier is exhausted under the present rules
+- this means the branch no longer has a single unresolved "next target" within the reachable subgraph from `0x0001BC34`
+- any deeper move now requires either:
+  - broader seed selection
+  - different traversal rules
+  - or a different class of experiment beyond this read-only call-map pass

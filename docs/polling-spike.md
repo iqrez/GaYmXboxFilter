@@ -1929,3 +1929,49 @@ Interpretation:
 So the next clean offline target is now:
 
 - `0x0001C090`
+
+The spike now also includes a bounded exhaustive walk over the current read-only traversal model:
+
+- `scripts\capture-usbxhci-exhaustive-walk.ps1`
+
+Current exhaustive result on this machine:
+
+- seed set:
+  - `0x0001BC34`
+- output:
+  - `out\dev\usbxhci-exhaustive-walk.txt`
+- visited targets:
+  - `927`
+- class breakdown:
+  - `substantive=335`
+  - `mixed=294`
+  - `trace=141`
+  - `bridge=61`
+  - `stub=44`
+  - `opaque=22`
+  - `path-string=16`
+  - `thunk=10`
+  - `etw=4`
+- traversal mode:
+  - direct internal targets from substantive and bridge nodes
+  - plus substantial same-band neighbors
+
+Coverage check:
+
+- earlier hot-path anchors are included in the exhaustive walk:
+  - `0x00006BA0`
+  - `0x00006E74`
+  - `0x000077FC`
+  - `0x00007D60`
+  - `0x0001AD7C`
+  - `0x0001B1F0`
+  - `0x00056DBC`
+
+Interpretation:
+
+- the current read-only traversal frontier is exhausted under the present rules
+- there is no longer a single manually selected "next target" inside this reachable subgraph
+- further progress now means either:
+  - changing the traversal rules
+  - seeding a different subgraph
+  - or leaving read-only recon and moving into a different kind of experiment

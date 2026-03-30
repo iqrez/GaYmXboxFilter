@@ -1503,3 +1503,86 @@ with immediate follow-on context in:
 - `0x0001BA8C`
 
 and `0x00058AC0` / `0x0000C8C0` demoted to stub-and-trace side context.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-timer-body-follow-assessment.ps1`
+
+Current `0x0001B1F0` follow-on assessment on this machine:
+
+- direct bridge:
+  - `0x0000D210`
+- alternate local wrapper ladder:
+  - `0x0001BA28`
+  - `0x0001BA64`
+  - `0x0001BA8C`
+- first substantive bodies:
+  - `0x0000D258`
+  - `0x0001BAC0`
+- recommended next:
+  - `0x0000D258`
+- secondary track:
+  - `0x0001BAC0`
+
+Why:
+
+- `0x0000D210`
+  - is only a bridge:
+    - size `65`
+    - one direct internal handoff to:
+      - `0x0000D258`
+- `0x0001BA28`
+  - is a tiny wrapper:
+    - size `54`
+    - one direct internal handoff to:
+      - `0x0001CBB4`
+- `0x0001BA64`
+  - is a tiny local bridge:
+    - size `31`
+    - one direct internal handoff to:
+      - `0x0001BA8C`
+- `0x0001BA8C`
+  - collapses immediately:
+    - size `34`
+    - self-loop only
+- `0x0000D258`
+  - is the direct substantive continuation:
+    - size `664`
+    - `5` direct internal
+    - `2` direct IAT
+  - reconnects into the earlier transfer-side line:
+    - `0x0001A7FC`
+    - `0x0001AD7C`
+  - and carries pool-management imports:
+    - `ExAllocatePool2`
+    - `ExFreePoolWithTag`
+- `0x0001BAC0`
+  - is the first real body on the local alternate side:
+    - size `363`
+    - `6` direct internal
+    - `0` direct IAT
+  - fan-out includes:
+    - `0x0001BF58`
+    - `0x0001BC34`
+    - `0x0001F9A4`
+    - `0x00005BC0`
+    - `0x00006A08`
+
+Interpretation:
+
+- the immediate `0x0001B1F0` split is no longer ambiguous
+- the direct bridge side through `0x0000D210` reaches substantive code faster
+- the `0x0001BA28` side only becomes interesting again after a tiny wrapper ladder, so it should be treated as secondary
+
+So the next clean offline target is now:
+
+- `0x0000D258`
+
+with immediate follow-on context in:
+
+- `0x0001A7FC`
+- `0x0001AD7C`
+- `0x00058AC0`
+- `0x00058BC0`
+
+and `0x0001BAC0` kept as the secondary local branch.

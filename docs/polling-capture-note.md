@@ -1825,3 +1825,100 @@ with immediate follow-on context in:
 - `0x0001BA8C`
 
 and `0x00058AC0` / `0x0000C8C0` demoted to stub-and-trace side context.
+
+## USBXHCI Timer Body Follow Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-timer-body-follow-assessment.ps1
+```
+
+That read-only pass compares the `0x0001B1F0` split:
+
+- direct bridge:
+  - `0x0000D210`
+- alternate local wrapper ladder:
+  - `0x0001BA28`
+  - `0x0001BA64`
+  - `0x0001BA8C`
+- first substantive bodies:
+  - `0x0000D258`
+  - `0x0001BAC0`
+
+Observed on this machine:
+
+- `0x0000D210`
+  - size:
+    - `65`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x0000D258`
+- `0x0001BA28`
+  - size:
+    - `54`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x0001CBB4`
+- `0x0001BA64`
+  - size:
+    - `31`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x0001BA8C`
+- `0x0001BA8C`
+  - size:
+    - `34`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - self-loop only
+- `0x0000D258`
+  - size:
+    - `664`
+  - direct internal:
+    - `5`
+  - direct IAT:
+    - `2`
+  - visible direct behavior includes:
+    - `0x0001A7FC`
+    - `0x0001AD7C`
+    - `0x00058AC0`
+    - `0x00058BC0`
+    - `ExAllocatePool2`
+    - `ExFreePoolWithTag`
+- `0x0001BAC0`
+  - size:
+    - `363`
+  - direct internal:
+    - `6`
+  - direct IAT:
+    - `0`
+  - visible direct behavior includes:
+    - `0x0001BF58`
+    - `0x0001BC34`
+    - `0x0001F9A4`
+    - `0x00005BC0`
+    - `0x00006A08`
+
+Interpretation:
+
+- the direct `0x0000D210 -> 0x0000D258` side is the primary continuation
+- the `0x0001BA28` side is mostly a tiny wrapper ladder before it reaches `0x0001BAC0`
+- `0x0001BAC0` is still worth keeping, but as a secondary branch, not the primary next target
+
+So the next clean offline target is now:
+
+- `0x0000D258`
+
+with immediate follow-on context in:
+
+- `0x0001A7FC`
+- `0x0001AD7C`
+- `0x00058AC0`
+- `0x00058BC0`
+
+and `0x0001BAC0` kept as the secondary local branch.

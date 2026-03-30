@@ -2710,3 +2710,23 @@ Interpretation:
 - the first observation pass now has an end-to-end pipeline from probe event to offline rollup
 - the branch explicitly prefers buffered numeric event rows over live formatting on hot paths
 - the prototype is now concrete enough to implement without rethinking capture flow
+
+The spike now also includes a focused `0x0001B1F0` parser and rollup spec:
+
+- `scripts\capture-usbxhci-1b1f0-parser-rollup-spec.ps1`
+
+Current `0x0001B1F0` parser and rollup spec on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-parser-rollup-spec.txt`
+- core parser order:
+  - build arm table
+  - match wait rows
+  - construct correlated chains
+  - compute confidence-scored rollups
+
+Interpretation:
+
+- the branch now defines the matching algorithm instead of leaving timer-arm pairing implicit
+- confidence tiers and unmatched-row accounting are now first-class parts of the design
+- implementation can now start without inventing parser behavior during coding

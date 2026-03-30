@@ -2531,3 +2531,26 @@ Interpretation:
 
 - the spike now has a concrete controller-window intervention order, not just a body-level target order
 - if deeper host timing work continues, those four windows are the first serious controller-side study set
+
+The spike now also includes a `0x00015D30` window map:
+
+- `scripts\capture-usbxhci-15d30-window-map.ps1`
+
+Current `0x00015D30` window map on this machine:
+
+- output:
+  - `out\dev\usbxhci-15d30-window-map.txt`
+- bounded windows:
+  - `spinlock-entry-and-irql-raise`
+  - `transfer-body-and-mdl-turnover`
+  - `trace-side-and-cleanup-exits`
+  - `thunk-terminal-edge`
+
+Interpretation:
+
+- the strongest transfer-side leaf is now partitioned at the same level as the controller timing bodies
+- the highest-value transfer windows are:
+  - `transfer-body-and-mdl-turnover`
+  - `spinlock-entry-and-irql-raise`
+- `trace-side-and-cleanup-exits` is useful only as contrast context
+- `thunk-terminal-edge` is terminal noise rather than a serious study target

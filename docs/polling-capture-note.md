@@ -505,3 +505,50 @@ Interpretation:
 - the controller path is clearly hanging from `USBXHCI`, so host-stack work is still the right research layer
 - but this exact `USBXHCI.SYS` build is newer than the documented public `hidusbfn` Win11 patch range
 - so a future host-stack experiment on this machine would need fresh image-specific recon instead of assuming the published `hidusbf` assumptions transfer directly
+
+## USBXHCI Symbol And Pattern Recon
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-symbol-recon.ps1
+```
+
+That read-only pass parses the active `USBXHCI.SYS` image directly and records:
+
+- PE header identity
+- CodeView debug-directory data
+- section hashes for stable anchors
+- import tables
+- named exports, if any
+- ASCII strings matching controller/endpoint/transfer-related keywords
+
+Observed on this machine:
+
+- PE identity:
+  - `AMD64`
+  - `PE32+`
+  - subsystem `Native`
+  - entrypoint RVA `0x00055B30`
+- CodeView anchor:
+  - `RSDS`
+  - PDB path `usbxhci.pdb`
+- import surface:
+  - `HAL.dll`
+  - `ntoskrnl.exe`
+  - `WDFLDR.SYS`
+  - `WppRecorder.sys`
+- internal string anchors include:
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\endpoint.c`
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\controller.c`
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\command.c`
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\tr.c`
+  - `INTERRUPTER_DATA`
+  - `ENDPOINT_DATA`
+  - `Transfer Ring Tag`
+
+Interpretation:
+
+- the host-layer research target is no longer just "some `USBXHCI` build"
+- we now have concrete image anchors for this exact `10.0.26100.2454` binary
+- that is enough to support further offline mapping work without touching host-stack behavior yet

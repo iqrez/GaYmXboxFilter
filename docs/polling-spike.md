@@ -463,3 +463,41 @@ Interpretation:
 - but direct reuse of `hidusbf`/`hidusbfn` era `USBXHCI` assumptions is not validated on this box
 - this machine is running a newer `USBXHCI.SYS` than the documented public patch range
 - any future host-stack experiment therefore starts as a fresh reverse-engineering/recon task, not a straight reuse exercise
+
+That recon task now has a first read-only implementation too:
+
+- `scripts\capture-usbxhci-symbol-recon.ps1`
+
+Current `USBXHCI.SYS` symbol/pattern reconnaissance on this machine found:
+
+- PE identity:
+  - `AMD64`
+  - `PE32+`
+  - subsystem `Native`
+  - entrypoint RVA `0x00055B30`
+- CodeView debug anchor:
+  - format `RSDS`
+  - PDB path `usbxhci.pdb`
+- stable section anchors:
+  - `.text` SHA256 `F25F49E605032AB34F10C735733E65F86E1572E97E0476FB647AD26AFB3BF524`
+  - `PAGE` SHA256 `BAB60678385351CE4D232D30EED1F4C541A50FD7737D6220E90512C9CE5D15D6`
+  - `.idata` SHA256 `316B925A83B5593141864F5364984D0799A05C79D985514CEF860B0E1A9C996D`
+- import surface:
+  - `HAL.dll`
+  - `ntoskrnl.exe`
+  - `WDFLDR.SYS`
+  - `WppRecorder.sys`
+- keyword-bearing internal strings and source-path anchors:
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\endpoint.c`
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\controller.c`
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\command.c`
+  - `onecore\drivers\wdm\usb\usb3\usbxhci\sys\tr.c`
+  - `INTERRUPTER_DATA`
+  - `ENDPOINT_DATA`
+  - `Transfer Ring Tag`
+
+Interpretation:
+
+- a future host-stack experiment is still high-risk, but it is no longer blind
+- this image exposes enough internal naming and structural anchors to support deeper offline reverse engineering if we choose to go there
+- the next stage, if pursued, should stay read-only and build function/feature maps from these anchors before any attempt to intercept or patch host-controller behavior

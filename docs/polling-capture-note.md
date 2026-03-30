@@ -2837,3 +2837,35 @@ Interpretation:
 - the `0x000077FC` line reduces to:
   - sibling event-side leaf `0x000077FC`
 - if deeper host-side timing work continues, `0x000038CC` is now the better event-dispatch family to study
+
+## USBXHCI Reduced Leaf Shortlist
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-reduced-leaf-shortlist.ps1
+```
+
+That pass ranks the surviving controller and transfer leaves after the family reductions.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-reduced-leaf-shortlist.txt`
+- candidate set:
+  - controller family:
+    - `0x0001B1F0`
+    - `0x0003FC38`
+    - `0x0003634C`
+  - transfer family:
+    - `0x00010D60`
+    - `0x00015D30`
+    - `0x000077FC`
+
+Interpretation:
+
+- controller timing bodies still outrank the reduced transfer leaves
+- `0x0001B1F0` remains the primary next study target
+- `0x0003634C` remains the secondary controller timing target
+- `0x00015D30` is the strongest remaining transfer-side leaf
+- `0x000077FC` stays relevant as the sibling event-side leaf, but not as the strongest next target

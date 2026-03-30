@@ -2291,3 +2291,29 @@ So the event-dispatch transfer leaf set is now:
 - `0x000077FC` retained as the sibling event-side leaf
 
 That makes `0x000038CC` the better event-dispatch family to study further if host-side timing work continues.
+
+The spike now also includes a reduced-leaf shortlist:
+
+- `scripts\capture-usbxhci-reduced-leaf-shortlist.ps1`
+
+Current reduced-leaf shortlist on this machine:
+
+- output:
+  - `out\dev\usbxhci-reduced-leaf-shortlist.txt`
+- candidate set:
+  - controller family:
+    - `0x0001B1F0`
+    - `0x0003FC38`
+    - `0x0003634C`
+  - transfer family:
+    - `0x00010D60`
+    - `0x00015D30`
+    - `0x000077FC`
+
+Interpretation:
+
+- controller timing bodies still outrank the reduced transfer leaves
+- `0x0001B1F0` remains the primary next study target
+- `0x0003634C` remains the secondary controller timing target
+- `0x00015D30` is the strongest remaining transfer-side leaf
+- `0x000077FC` stays relevant as the sibling event-side leaf, but not as the strongest next target

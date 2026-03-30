@@ -155,6 +155,86 @@ Updated interpretation:
 - the next spike step is no longer discovery of the timing owner
 - the next spike step is controlled perturbation of this parent-path cadence to see whether upper-visible polling behavior changes
 
+## Controlled Perturbation Result
+
+That perturbation experiment is now complete.
+
+Method:
+
+- enabled a fixed `5000 us` dev-only jitter on the lower parent probe
+- targeted via:
+  - `GAYM_CONTROL_TARGET=lower`
+  - `GaYmCLI jitter 5000 5000`
+- measured before and after with:
+  - `CadenceProbe.exe 3 500 lower 0`
+  - `CadenceProbe.exe 3 500 upper 0`
+
+Observed baseline:
+
+- lower parent cadence:
+  - approximately `124-127` internal-control completions per `500 ms`
+- upper cadence:
+  - approximately `119-137` `0x8000E00C` device-control completions per `500 ms`
+
+Observed with parent jitter enabled:
+
+- lower parent cadence dropped to roughly `99-104` per `500 ms`
+- upper cadence dropped to roughly `48-64` per `500 ms`
+
+Conclusion:
+
+- parent-path completion timing is not just observable
+- parent-path completion timing is causal for the upper visible polling behavior on this machine
+- this is the first successful below-HID timing intervention in the spike
+
+That does not yet prove direct USB endpoint `bInterval` control.
+
+It does prove that the composite parent path is the first viable place to modulate polling-visible behavior below the supported HID-child stack.
+
+## Parent Jitter Sweep
+
+The next step was to check whether that perturbation scaled smoothly or only appeared at the high end.
+
+Measured with a fixed lower-target jitter sweep:
+
+- `0 us`
+- `1000 us`
+- `2000 us`
+- `3000 us`
+- `5000 us`
+
+Method:
+
+- targeted via:
+  - `GAYM_CONTROL_TARGET=lower`
+  - `GaYmCLI jitter <value> <value>`
+- sampled after each change with:
+  - `CadenceProbe.exe 3 500 lower 0`
+  - `CadenceProbe.exe 3 500 upper 0`
+
+Observed averages per `500 ms` window:
+
+| Lower jitter | Lower parent cadence | Upper cadence |
+| --- | ---: | ---: |
+| `0 us` | `125.5` | `121.0` |
+| `1000 us` | `125.7` | `123.0` |
+| `2000 us` | `125.5` | `122.8` |
+| `3000 us` | `125.2` | `121.5` |
+| `5000 us` | `113.0` | `71.2` |
+
+Interpretation:
+
+- the parent-path timing effect is real
+- it is not approximately linear over this range
+- `1000-3000 us` produced little or no stable change in upper visible cadence
+- `5000 us` still produced a strong drop in both lower parent cadence and upper visible cadence
+
+Current best read:
+
+- the parent path is definitely causal
+- the observable transfer function has a threshold or bursty behavior instead of a smooth proportional response
+- if real hardware-visible poll control exists here, the next spike should focus on shaping or scheduling the delay more precisely rather than just increasing fixed stall time
+
 ## Guardrails
 
 - Keep the stable product line untouched.

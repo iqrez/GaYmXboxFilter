@@ -272,3 +272,42 @@ Interpretation:
 - that cadence is in the same range as the proven upper-path polling cadence
 - this strongly suggests the timing owner for real polling experiments sits on or below the composite-parent `0B12` path
 - the next spike step should be a controlled perturbation experiment on the parent-path internal-control flow
+
+## Composite-Parent Perturbation Result
+
+Follow-up measurement after enabling a fixed lower-target jitter on the parent probe:
+
+```text
+GAYM_CONTROL_TARGET=lower
+GaYmCLI jitter 5000 5000
+CadenceProbe.exe 3 500 lower 0
+CadenceProbe.exe 3 500 upper 0
+```
+
+Observed:
+
+- lower parent cadence dropped from roughly `124-127` to roughly `99-104` per `500 ms`
+- upper cadence dropped from roughly `119-137` to roughly `48-64` per `500 ms`
+
+Interpretation:
+
+- this is the first direct causal proof that parent-path timing changes alter the upper visible polling cadence
+- the composite parent is therefore the first viable below-HID timing intervention point found in the spike
+
+## Composite-Parent Jitter Sweep
+
+Follow-up sweep with fixed lower-target jitter values:
+
+| Lower jitter | Lower avg / `500 ms` | Upper avg / `500 ms` |
+| --- | ---: | ---: |
+| `0 us` | `125.5` | `121.0` |
+| `1000 us` | `125.7` | `123.0` |
+| `2000 us` | `125.5` | `122.8` |
+| `3000 us` | `125.2` | `121.5` |
+| `5000 us` | `113.0` | `71.2` |
+
+Interpretation:
+
+- `1000-3000 us` does not create a stable observable upper-path change
+- `5000 us` still causes a clear drop in both lower and upper cadence
+- the parent-path transfer function looks thresholded or bursty, not smoothly proportional

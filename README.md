@@ -117,6 +117,7 @@ Run the smoke test:
 ## Key Docs
 
 - architecture: [docs/architecture.md](./docs/architecture.md)
+- polling spike: [docs/polling-spike.md](./docs/polling-spike.md)
 - install: [docs/install.md](./docs/install.md)
 - diagnostics: [docs/diagnostics.md](./docs/diagnostics.md)
 - rollback: [docs/rollback.md](./docs/rollback.md)

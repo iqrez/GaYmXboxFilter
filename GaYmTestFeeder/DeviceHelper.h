@@ -16,10 +16,15 @@
 #include <windows.h>
 #include <winioctl.h>
 #include <setupapi.h>
+#include <hidsdi.h>
+#include <hidclass.h>
 #include "../ioctl.h"
 
 #pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "hid.lib")
 
+#include <algorithm>
+#include <cwctype>
 #include <string>
 #include <vector>
 
@@ -350,6 +355,214 @@ inline std::vector<GaYmDevicePath> EnumerateGaYmDevicesForTarget(GaYmControlTarg
 inline std::vector<GaYmDevicePath> EnumerateGaYmDevices()
 {
     return EnumerateGaYmDevicesForTarget(GaYmGetControlTargetPreference());
+}
+
+inline bool GaYmStringContainsInsensitive(
+    const std::wstring& haystack,
+    const wchar_t* needle)
+{
+    std::wstring normalizedHaystack(haystack);
+    std::wstring normalizedNeedle(needle != nullptr ? needle : L"");
+
+    std::transform(
+        normalizedHaystack.begin(),
+        normalizedHaystack.end(),
+        normalizedHaystack.begin(),
+        towlower);
+    std::transform(
+        normalizedNeedle.begin(),
+        normalizedNeedle.end(),
+        normalizedNeedle.begin(),
+        towlower);
+
+    return normalizedHaystack.find(normalizedNeedle) != std::wstring::npos;
+}
+
+inline bool QueryHidDeviceAttributes(
+    const std::wstring& path,
+    HIDD_ATTRIBUTES* attributes)
+{
+    HANDLE device = INVALID_HANDLE_VALUE;
+
+    if (attributes == nullptr) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    ZeroMemory(attributes, sizeof(*attributes));
+    attributes->Size = sizeof(*attributes);
+
+    device = CreateFileW(
+        path.c_str(),
+        0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+    if (device == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    const BOOLEAN success = HidD_GetAttributes(device, attributes);
+    CloseHandle(device);
+    return success != FALSE;
+}
+
+inline std::vector<GaYmDevicePath> EnumerateSupportedXboxHidDevices()
+{
+    std::vector<GaYmDevicePath> result;
+    GUID hidGuid = {};
+    HDEVINFO devInfo;
+    SP_DEVICE_INTERFACE_DATA ifData = {};
+
+    HidD_GetHidGuid(&hidGuid);
+    devInfo = SetupDiGetClassDevsW(
+        &hidGuid,
+        NULL,
+        NULL,
+        DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
+
+    if (devInfo == INVALID_HANDLE_VALUE) {
+        return result;
+    }
+
+    ifData.cbSize = sizeof(ifData);
+    for (DWORD enumIndex = 0;
+         SetupDiEnumDeviceInterfaces(devInfo, NULL, &hidGuid, enumIndex, &ifData);
+         ++enumIndex) {
+        DWORD needed = 0;
+        SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, NULL, 0, &needed, NULL);
+        if (needed == 0) {
+            continue;
+        }
+
+        std::vector<BYTE> detailBuffer(needed);
+        auto detail = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA_W>(detailBuffer.data());
+        detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
+
+        if (!SetupDiGetDeviceInterfaceDetailW(
+                devInfo,
+                &ifData,
+                detail,
+                needed,
+                NULL,
+                NULL)) {
+            continue;
+        }
+
+        std::wstring devicePath(detail->DevicePath);
+        HIDD_ATTRIBUTES attributes = {};
+
+        if (!QueryHidDeviceAttributes(devicePath, &attributes)) {
+            continue;
+        }
+
+        if (attributes.VendorID != 0x045E || attributes.ProductID != 0x02FF) {
+            continue;
+        }
+
+        GaYmDevicePath device = {};
+        device.index = static_cast<int>(result.size());
+        device.path = devicePath;
+        result.push_back(device);
+    }
+
+    SetupDiDestroyDeviceInfoList(devInfo);
+    return result;
+}
+
+inline HANDLE OpenSupportedXboxHidDevice(
+    int index = 0,
+    DWORD desiredAccess = GENERIC_READ | GENERIC_WRITE)
+{
+    const std::vector<GaYmDevicePath> devices = EnumerateSupportedXboxHidDevices();
+
+    if (index < 0 || static_cast<size_t>(index) >= devices.size()) {
+        SetLastError(ERROR_FILE_NOT_FOUND);
+        return INVALID_HANDLE_VALUE;
+    }
+
+    return CreateFileW(
+        devices[static_cast<size_t>(index)].path.c_str(),
+        desiredAccess,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+}
+
+inline bool QueryHidPollIntervalMs(
+    int index,
+    ULONG* intervalMs)
+{
+    HANDLE device = INVALID_HANDLE_VALUE;
+    DWORD bytesReturned = 0;
+    ULONG localIntervalMs = 0;
+
+    if (intervalMs == nullptr) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    *intervalMs = 0;
+    device = OpenSupportedXboxHidDevice(index);
+    if (device == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    if (!DeviceIoControl(
+            device,
+            IOCTL_HID_GET_POLL_FREQUENCY_MSEC,
+            NULL,
+            0,
+            &localIntervalMs,
+            sizeof(localIntervalMs),
+            &bytesReturned,
+            NULL)) {
+        CloseHandle(device);
+        return false;
+    }
+
+    CloseHandle(device);
+    if (bytesReturned != sizeof(localIntervalMs)) {
+        SetLastError(ERROR_INVALID_DATA);
+        return false;
+    }
+
+    *intervalMs = localIntervalMs;
+    return true;
+}
+
+inline bool SetHidPollIntervalMs(
+    int index,
+    ULONG intervalMs)
+{
+    HANDLE device = INVALID_HANDLE_VALUE;
+    DWORD bytesReturned = 0;
+
+    if (intervalMs == 0) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    device = OpenSupportedXboxHidDevice(index);
+    if (device == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    const BOOL success = DeviceIoControl(
+        device,
+        IOCTL_HID_SET_POLL_FREQUENCY_MSEC,
+        &intervalMs,
+        sizeof(intervalMs),
+        NULL,
+        0,
+        &bytesReturned,
+        NULL);
+    CloseHandle(device);
+    return success != FALSE;
 }
 
 inline HANDLE OpenGaYmDeviceForTarget(GaYmControlTarget target, int index = 0)

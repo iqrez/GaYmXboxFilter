@@ -16,6 +16,20 @@ Query live status:
 .\tools\GaYmCLI.exe status
 ```
 
+Query or request HID-class poll frequency on the supported controller:
+
+```powershell
+.\tools\GaYmCLI.exe poll
+.\tools\GaYmCLI.exe poll 4
+```
+
+If the command reports that the active HID stack does not expose poll-frequency control, use feeder-side cadence control instead:
+
+```powershell
+.\tools\GaYmFeeder.exe --poll-rate-hz 250
+.\tools\GaYmFeeder.exe --poll-interval-ms 4
+```
+
 The default `status` path is the supported upper control channel.
 
 When running from the full repo instead of the extracted bundle, the equivalent path is:

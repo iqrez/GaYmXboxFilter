@@ -211,6 +211,8 @@ static void PrintUsage()
     printf("GaYm Controller CLI v2.0\n\n");
     printf("Usage:\n");
     printf("  GaYmCLI status                     Show all devices and state\n");
+    printf("  GaYmCLI poll [device_index]        Show HID poll interval for the supported controller\n");
+    printf("  GaYmCLI poll <ms> [device_index]   Set HID poll interval in milliseconds\n");
     printf("  GaYmCLI wakecheck [seconds] [interval_ms] [device_index]\n");
     printf("  GaYmCLI rumble <left> <right> [duration_ms] [pad_index]\n");
     printf("  GaYmCLI vrumble <left> <right> [duration_ms] [device_index]\n");
@@ -692,6 +694,75 @@ static bool ParseLongArgument(const char* text, long minValue, long maxValue, lo
     return true;
 }
 
+static void PrintPollInterval(ULONG intervalMs)
+{
+    const double rateHz = intervalMs != 0
+        ? 1000.0 / static_cast<double>(intervalMs)
+        : 0.0;
+
+    printf(
+        "HID poll interval: %lu ms (%.2f Hz)\n",
+        intervalMs,
+        rateHz);
+}
+
+static void CmdPoll(int argc, char* argv[])
+{
+    long intervalMs = -1;
+    long deviceIndex = 0;
+    ULONG currentIntervalMs = 0;
+    int deviceArgIndex = 2;
+
+    if (argc >= 3 && _stricmp(argv[2], "status") != 0 && _stricmp(argv[2], "get") != 0) {
+        if (!ParseLongArgument(argv[2], 1, 1000, &intervalMs)) {
+            fprintf(stderr, "Invalid poll interval value: %s\n", argv[2]);
+            return;
+        }
+        deviceArgIndex = 3;
+    }
+
+    if (argc > deviceArgIndex) {
+        if (!ParseLongArgument(argv[deviceArgIndex], 0, 64, &deviceIndex)) {
+            fprintf(stderr, "Invalid device index: %s\n", argv[deviceArgIndex]);
+            return;
+        }
+    }
+
+    if (intervalMs >= 0) {
+        if (!SetHidPollIntervalMs(static_cast<int>(deviceIndex), static_cast<ULONG>(intervalMs))) {
+            const DWORD error = GetLastError();
+            if (error == ERROR_INVALID_FUNCTION) {
+                fprintf(
+                    stderr,
+                    "The active HID stack does not expose poll-frequency control on this path.\n");
+            } else {
+                fprintf(stderr, "Failed to set HID poll interval (error %lu).\n", error);
+            }
+            return;
+        }
+
+        printf(
+            "Set HID poll interval for supported HID device %ld to %ld ms.\n",
+            deviceIndex,
+            intervalMs);
+    }
+
+    if (!QueryHidPollIntervalMs(static_cast<int>(deviceIndex), &currentIntervalMs)) {
+        const DWORD error = GetLastError();
+        if (error == ERROR_INVALID_FUNCTION) {
+            fprintf(
+                stderr,
+                "The active HID stack does not expose poll-frequency control on this path.\n");
+        } else {
+            fprintf(stderr, "Failed to query HID poll interval (error %lu).\n", error);
+        }
+        return;
+    }
+
+    printf("Supported HID device %ld\n", deviceIndex);
+    PrintPollInterval(currentIntervalMs);
+}
+
 static bool IsExpectedTransientQueryError(DWORD error)
 {
     switch (error) {
@@ -1131,6 +1202,7 @@ int main(int argc, char* argv[])
     const char* cmd = argv[1];
 
     if      (_stricmp(cmd, "status") == 0) CmdStatus();
+    else if (_stricmp(cmd, "poll")   == 0) CmdPoll(argc, argv);
     else if (_stricmp(cmd, "wakecheck") == 0) CmdWakeCheck(argc, argv);
     else if (_stricmp(cmd, "rumble") == 0) CmdRumble(argc, argv);
     else if (_stricmp(cmd, "vrumble") == 0) CmdVirtualRumble(argc, argv);

@@ -75,6 +75,17 @@ Build the release operator bundle:
 
 The release bundle keeps the supported verifiers and CLI control path, but omits deep packet sniffers and disables the maintainer-only `jitter` command.
 
+Operator timing controls:
+
+```powershell
+.\out\dev\tools\GaYmCLI.exe poll
+.\out\dev\tools\GaYmCLI.exe poll 4
+.\out\dev\tools\GaYmFeeder.exe --poll-rate-hz 250
+.\out\dev\tools\GaYmFeeder.exe --poll-interval-ms 4
+```
+
+`GaYmCLI.exe poll` is a best-effort HID-class poll-frequency control. If the active HID stack rejects that ioctl, use the feeder poll-rate flags instead; those control injection cadence on the supported stack even when HID-class polling is fixed.
+
 Install the supported hybrid stack:
 
 ```powershell

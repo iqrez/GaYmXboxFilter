@@ -159,6 +159,9 @@ static void PrintUsageAndExit()
     std::printf("  -c, --config <path>    Config file (default: GaYmController.ini)\n");
     std::printf("  -p, --provider <name>  Input provider: keyboard, mouse, network, macro, config\n");
     std::printf("  -d, --device <index>   Device index (0 = first)\n");
+    std::printf("      --poll-rate-hz <n> Override feeder injection rate in Hz\n");
+    std::printf("      --poll-interval-ms <n> Override feeder injection interval in milliseconds\n");
+    std::printf("      --hid-poll-ms <n>  Request HID poll interval in milliseconds\n");
     std::printf("      --duration-ms <n>  Run for n milliseconds, then exit cleanly\n");
     std::printf("  -h, --help             Show this help\n");
     std::printf("\nRuntime hotkeys:\n");
@@ -168,13 +171,27 @@ static void PrintUsageAndExit()
     std::exit(0);
 }
 
+static bool ParsePositiveLongArgument(const char* text, long minValue, long maxValue, long* value)
+{
+    char* end = nullptr;
+    const long parsed = std::strtol(text, &end, 10);
+    if (end == text || *end != '\0' || parsed < minValue || parsed > maxValue) {
+        return false;
+    }
+
+    *value = parsed;
+    return true;
+}
+
 static void ParseArgs(
     int argc,
     char* argv[],
     std::string* configPath,
     std::string* providerOverride,
     int* deviceOverride,
-    DWORD* runDurationMs)
+    DWORD* runDurationMs,
+    int* pollRateHzOverride,
+    long* hidPollIntervalMsOverride)
 {
     for (int argIndex = 1; argIndex < argc; ++argIndex) {
         if ((std::strcmp(argv[argIndex], "-c") == 0 ||
@@ -202,6 +219,39 @@ static void ParseArgs(
              std::strcmp(argv[argIndex], "--duration") == 0) &&
             argIndex + 1 < argc) {
             *runDurationMs = static_cast<DWORD>(std::strtoul(argv[++argIndex], nullptr, 10));
+            continue;
+        }
+
+        if (std::strcmp(argv[argIndex], "--poll-rate-hz") == 0 &&
+            argIndex + 1 < argc) {
+            long parsedHz = 0;
+            if (!ParsePositiveLongArgument(argv[++argIndex], 1, 2000, &parsedHz)) {
+                std::fprintf(stderr, "ERROR: Invalid poll rate: %s\n", argv[argIndex]);
+                std::exit(1);
+            }
+
+            *pollRateHzOverride = static_cast<int>(parsedHz);
+            continue;
+        }
+
+        if (std::strcmp(argv[argIndex], "--poll-interval-ms") == 0 &&
+            argIndex + 1 < argc) {
+            long parsedIntervalMs = 0;
+            if (!ParsePositiveLongArgument(argv[++argIndex], 1, 1000, &parsedIntervalMs)) {
+                std::fprintf(stderr, "ERROR: Invalid poll interval: %s\n", argv[argIndex]);
+                std::exit(1);
+            }
+
+            *pollRateHzOverride = std::max(1L, 1000L / parsedIntervalMs);
+            continue;
+        }
+
+        if (std::strcmp(argv[argIndex], "--hid-poll-ms") == 0 &&
+            argIndex + 1 < argc) {
+            if (!ParsePositiveLongArgument(argv[++argIndex], 1, 1000, hidPollIntervalMsOverride)) {
+                std::fprintf(stderr, "ERROR: Invalid HID poll interval: %s\n", argv[argIndex]);
+                std::exit(1);
+            }
             continue;
         }
 
@@ -242,7 +292,17 @@ static int RunFeeder(int argc, char* argv[])
     std::string providerOverride;
     int deviceOverride = -1;
     DWORD runDurationMs = 0;
-    ParseArgs(argc, argv, &configPath, &providerOverride, &deviceOverride, &runDurationMs);
+    int pollRateHzOverride = -1;
+    long hidPollIntervalMsOverride = -1;
+    ParseArgs(
+        argc,
+        argv,
+        &configPath,
+        &providerOverride,
+        &deviceOverride,
+        &runDurationMs,
+        &pollRateHzOverride,
+        &hidPollIntervalMsOverride);
 
     GaYmConfig cfg;
     if (LoadConfig(configPath, cfg)) {
@@ -259,6 +319,9 @@ static int RunFeeder(int argc, char* argv[])
     }
     if (deviceOverride >= 0) {
         cfg.deviceIndex = deviceOverride;
+    }
+    if (pollRateHzOverride > 0) {
+        cfg.pollRateHz = pollRateHzOverride;
     }
 
     auto devices = EnumerateGaYmDevices();
@@ -292,6 +355,36 @@ static int RunFeeder(int argc, char* argv[])
             DeviceTypeName(deviceInfo.DeviceType),
             deviceInfo.VendorId,
             deviceInfo.ProductId);
+    }
+
+    if (hidPollIntervalMsOverride > 0) {
+        ULONG currentPollIntervalMs = 0;
+        if (SetHidPollIntervalMs(cfg.deviceIndex, static_cast<ULONG>(hidPollIntervalMsOverride))) {
+            std::printf(
+                "[HID Poll] Requested %ld ms on supported HID device %d\n",
+                hidPollIntervalMsOverride,
+                cfg.deviceIndex);
+
+            if (QueryHidPollIntervalMs(cfg.deviceIndex, &currentPollIntervalMs)) {
+                std::printf(
+                    "[HID Poll] Active %lu ms (%.2f Hz)\n",
+                    currentPollIntervalMs,
+                    1000.0 / static_cast<double>(currentPollIntervalMs));
+            }
+        } else {
+            const DWORD error = GetLastError();
+            if (error == ERROR_INVALID_FUNCTION) {
+                std::fprintf(
+                    stderr,
+                    "WARNING: The active HID stack does not expose poll-frequency control on this path.\n");
+            } else {
+                std::fprintf(
+                    stderr,
+                    "WARNING: Failed to set HID poll interval to %ld ms (error %lu).\n",
+                    hidPollIntervalMsOverride,
+                    error);
+            }
+        }
     }
 
     auto provider = CreateProvider(cfg.provider, cfg);

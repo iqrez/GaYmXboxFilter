@@ -2317,3 +2317,45 @@ Interpretation:
 - `0x0003634C` remains the secondary controller timing target
 - `0x00015D30` is the strongest remaining transfer-side leaf
 - `0x000077FC` stays relevant as the sibling event-side leaf, but not as the strongest next target
+
+The spike now also includes a focused `0x0001B1F0` micro-map:
+
+- `scripts\capture-usbxhci-1b1f0-micromap.ps1`
+
+Current `0x0001B1F0` micro-map result on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-micromap.txt`
+- direct timing surface on `0x0001B1F0`:
+  - `KeQueryUnbiasedInterruptTime`
+  - `KeStallExecutionProcessor`
+  - `ExAllocateTimer`
+  - `ExSetTimer`
+  - `ExDeleteTimer`
+  - `KeInitializeEvent`
+  - `KeWaitForSingleObject`
+  - `KeGetCurrentIrql`
+- direct branch groups:
+  - timing descendant:
+    - `0x0003FC38`
+  - bridge into alternate path:
+    - `0x0000D210`
+  - debug/trace side context:
+    - `0x00019AC8`
+    - `0x0001A724`
+    - `0x0002E390`
+    - `0x0000BF40`
+    - `0x0000C970`
+  - wrapper ladder:
+    - `0x0001BA28`
+    - `0x0001BA64`
+    - `0x0001BA8C`
+    - `0x0000BE64`
+  - thunk:
+    - `0x00058B00`
+
+Interpretation:
+
+- `0x0001B1F0` is the real controller timing core on this branch
+- `0x0003FC38` is the only direct descendant that still preserves timing-centric behavior
+- `0x0000D210` is only a bridge into the alternate `D258` path, not a competing timing core

@@ -3289,3 +3289,28 @@ Interpretation:
 - the branch now has exact first-attachment candidates inside the primary controller body
 - timer-arm and wait-correlation points are preferred over direct stall primitives
 - `KeStallExecutionProcessor` is explicitly demoted to a late-stage contrast point
+
+## USBXHCI 1B1F0 Observation Prototype
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-observation-prototype.ps1
+```
+
+That pass defines the first live host-side prototype as an observation and correlation pass instead of a control pass.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-observation-prototype.txt`
+- first prototype anchors:
+  - `ExSetTimer`
+  - `KeWaitForSingleObject`
+  - `KeQueryUnbiasedInterruptTime`
+
+Interpretation:
+
+- the first host-side prototype is now defined as observation-first, not control-first
+- the branch now has a concrete first logging and correlation design for the primary controller window
+- broader bias or pacing experiments should wait until this correlation pass proves the signal is usable

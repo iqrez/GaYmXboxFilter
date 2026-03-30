@@ -850,3 +850,59 @@ It is primarily:
 with secondary context only from:
 
 - `0x00011240`
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-single-target-deep.ps1`
+
+Current single-target result on this machine:
+
+- primary target:
+  - `0x00006E74`
+- direct internal follow-on targets:
+  - `0x00008454`
+  - `0x00054F74`
+
+What that deeper pass shows:
+
+- `0x00006E74`
+  - sits in a tight local nonpageable neighborhood with:
+    - `0x00006A44`
+    - `0x00006BA0`
+    - `0x00007160`
+    - `0x000071C8`
+  - still has no direct IAT edges
+  - only calls:
+    - `0x00008454` twice
+    - `0x00054F74` once
+- `0x00008454`
+  - lands directly inside the endpoint neighborhood
+  - nearest known endpoint candidates are:
+    - `0x00008250-0x0000844D` (`Reset Endpoint`)
+    - `0x000085E0-0x000087BB` (`Stop Endpoint`)
+  - only fans into:
+    - `0x00058B00`
+  - carries one:
+    - `WppAutoLogTrace`
+- `0x00054F74`
+  - lands at the upper edge of the endpoint function band and immediately above a transfer candidate:
+    - nearest transfer candidate:
+      - `0x00054E60-0x00054F1D`
+  - but its own direct imports are:
+    - `DbgPrint`
+    - `KdRefreshDebuggerNotPresent`
+  - and its direct internal calls go to:
+    - `0x00018934`
+    - `0x0002C7F8`
+
+Interpretation:
+
+- `0x00006E74` still looks like the right hot-path continuation to study
+- but its two exits are now split cleanly:
+  - `0x00008454` is the stronger endpoint-side continuation
+  - `0x00054F74` looks more like a debug-heavy boundary/helper near the transfer/endpoint seam
+- so the next best offline target is no longer generic `0x00006E74`
+- it is specifically:
+  - `0x00008454`
+
+with `0x00054F74` kept only as boundary context.

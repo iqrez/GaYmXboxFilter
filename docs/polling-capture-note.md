@@ -993,3 +993,97 @@ Interpretation:
 So if the read-only spike continues, the next primary offline target should be:
 
 - `0x00006E74`
+
+## USBXHCI Single-Target Deep Pass
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-single-target-deep.ps1
+```
+
+That read-only pass centers on the one remaining hot-path candidate:
+
+- `0x00006E74`
+
+and resolves:
+
+- its local runtime-function neighborhood
+- its direct internal follow-on targets
+- whether those follow-on targets land back in known transfer or endpoint machinery
+
+Observed on this machine:
+
+- primary function:
+  - `0x00006E74-0x00007153`
+- direct internal targets:
+  - `0x00008454`
+  - `0x00054F74`
+- direct IAT imports:
+  - none
+
+Primary neighborhood:
+
+- `0x00006A44-0x00006B99`
+- `0x00006BA0-0x00006E6B`
+- `0x00006E74-0x00007153`
+- `0x00007160-0x000071C8`
+- `0x000071C8-0x00007245`
+
+### Follow Target `0x00008454`
+
+- resolved function:
+  - `0x00008454-0x000085D3`
+- strongest feature-band hit:
+  - endpoint
+- nearest known candidates:
+  - `0x00008250-0x0000844D`
+    - `Reset Endpoint`
+  - `0x000085E0-0x000087BB`
+    - `Stop Endpoint`
+- direct internal target:
+  - `0x00058B00`
+- direct import:
+  - `WppAutoLogTrace`
+
+Interpretation:
+
+- `0x00008454` sits directly between two endpoint-tagged candidates
+- it still looks like endpoint-adjacent hot machinery, even though the one visible import is tracing
+- the internal jump to `0x00058B00` fits the existing helper/thunk routing picture
+
+### Follow Target `0x00054F74`
+
+- resolved function:
+  - `0x00054F74-0x000550A4`
+- feature-band hits:
+  - endpoint
+  - interrupter
+- nearest known candidate:
+  - `0x00054E60-0x00054F1D`
+    - transfer
+- direct internal targets:
+  - `0x00018934`
+  - `0x0002C7F8`
+- direct imports:
+  - `DbgPrint`
+  - `KdRefreshDebuggerNotPresent`
+
+Interpretation:
+
+- `0x00054F74` sits on a transfer/endpoint boundary rather than squarely inside the earlier transfer-event cluster set
+- its direct imports are debugger-state oriented, not obviously hot transfer-state primitives
+- so it looks more like boundary or diagnostic context than the main continuation to prioritize
+
+Overall interpretation:
+
+- the branch out of `0x00006E74` does stay inside endpoint/transfer-adjacent machinery
+- but the two exits are not equal:
+  - `0x00008454` is the stronger endpoint-side continuation
+  - `0x00054F74` is a weaker debug-heavy boundary path
+- that narrows the next clean offline target from:
+  - `0x00006E74`
+- to:
+  - `0x00008454`
+
+with `0x00054F74` kept only as secondary seam context.

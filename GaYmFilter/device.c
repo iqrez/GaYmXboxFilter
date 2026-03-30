@@ -133,6 +133,31 @@ static ULONG GaYmMinUlong(_In_ ULONG left, _In_ ULONG right)
 
 #if GAYM_ENABLE_DEV_DIAGNOSTICS
 #define GAYM_PARENT_PROBE_MAX_JITTER_US 5000u
+#define GAYM_PARENT_PROBE_SLEEP_THRESHOLD_US 1000u
+#define GAYM_PARENT_PROBE_BUSY_TAIL_US 200u
+
+static BOOLEAN GaYmIsParentProbeJitterTarget(
+    _In_ const PDEVICE_CONTEXT Ctx,
+    _In_ ULONG RequestType,
+    _In_ ULONG IoControlCode)
+{
+    return (BOOLEAN)(
+        Ctx->JitterConfig.Enabled != FALSE &&
+        Ctx->VendorId == 0x045E &&
+        Ctx->ProductId == 0x0B12 &&
+        RequestType == GAYM_TRACE_REQUEST_INTERNAL_DEVICE_CONTROL &&
+        IoControlCode == 0x00220003);
+}
+
+static VOID GaYmResetJitterSchedule(
+    _Inout_ PDEVICE_CONTEXT Ctx)
+{
+    KIRQL oldIrql;
+
+    KeAcquireSpinLock(&Ctx->JitterScheduleLock, &oldIrql);
+    Ctx->NextJitterDueTime100ns = 0;
+    KeReleaseSpinLock(&Ctx->JitterScheduleLock, oldIrql);
+}
 
 static ULONG GaYmSelectConfiguredJitterUs(
     _In_ PDEVICE_CONTEXT Ctx,
@@ -143,16 +168,7 @@ static ULONG GaYmSelectConfiguredJitterUs(
     ULONG maxDelayUs;
     ULONGLONG tick;
 
-    if (Ctx->JitterConfig.Enabled == FALSE) {
-        return 0;
-    }
-
-    if (Ctx->VendorId != 0x045E || Ctx->ProductId != 0x0B12) {
-        return 0;
-    }
-
-    if (RequestType != GAYM_TRACE_REQUEST_INTERNAL_DEVICE_CONTROL ||
-        IoControlCode != 0x00220003) {
+    if (!GaYmIsParentProbeJitterTarget(Ctx, RequestType, IoControlCode)) {
         return 0;
     }
 
@@ -170,17 +186,83 @@ static ULONG GaYmSelectConfiguredJitterUs(
     return minDelayUs + (ULONG)(tick % (ULONGLONG)(maxDelayUs - minDelayUs + 1));
 }
 
-static VOID GaYmApplyConfiguredJitter(
-    _In_ PDEVICE_CONTEXT Ctx,
+static ULONGLONG GaYmReserveConfiguredJitterDueTime100ns(
+    _Inout_ PDEVICE_CONTEXT Ctx,
     _In_ ULONG RequestType,
     _In_ ULONG IoControlCode)
 {
-    const ULONG delayUs = GaYmSelectConfiguredJitterUs(Ctx, RequestType, IoControlCode);
-    if (delayUs != 0) {
-        KeStallExecutionProcessor(delayUs);
+    KIRQL oldIrql;
+    const ULONG intervalUs = GaYmSelectConfiguredJitterUs(Ctx, RequestType, IoControlCode);
+    const ULONGLONG interval100ns = (ULONGLONG)intervalUs * 10ull;
+    ULONGLONG now100ns;
+    ULONGLONG dueTime100ns;
+
+    if (interval100ns == 0) {
+        return 0;
+    }
+
+    now100ns = KeQueryInterruptTime();
+    KeAcquireSpinLock(&Ctx->JitterScheduleLock, &oldIrql);
+    dueTime100ns = Ctx->NextJitterDueTime100ns;
+    if (dueTime100ns < now100ns) {
+        dueTime100ns = now100ns;
+    }
+
+    dueTime100ns += interval100ns;
+    Ctx->NextJitterDueTime100ns = dueTime100ns;
+    KeReleaseSpinLock(&Ctx->JitterScheduleLock, oldIrql);
+
+    return dueTime100ns;
+}
+
+static VOID GaYmDelayUntilScheduledTime100ns(
+    _In_ ULONGLONG DueTime100ns)
+{
+    ULONGLONG now100ns;
+    ULONGLONG remaining100ns;
+
+    while (TRUE) {
+        now100ns = KeQueryInterruptTime();
+        if (now100ns >= DueTime100ns) {
+            break;
+        }
+
+        remaining100ns = DueTime100ns - now100ns;
+        if (KeGetCurrentIrql() <= APC_LEVEL &&
+            remaining100ns > (ULONGLONG)GAYM_PARENT_PROBE_SLEEP_THRESHOLD_US * 10ull) {
+            ULONGLONG sleep100ns = remaining100ns;
+
+            if (sleep100ns > (ULONGLONG)GAYM_PARENT_PROBE_BUSY_TAIL_US * 10ull) {
+                LARGE_INTEGER interval;
+                sleep100ns -= (ULONGLONG)GAYM_PARENT_PROBE_BUSY_TAIL_US * 10ull;
+                interval.QuadPart = -(LONGLONG)sleep100ns;
+                (VOID)KeDelayExecutionThread(KernelMode, FALSE, &interval);
+                continue;
+            }
+        }
+
+        KeStallExecutionProcessor((ULONG)((remaining100ns + 9ull) / 10ull));
+        break;
+    }
+}
+
+static VOID GaYmApplyConfiguredJitter(
+    _Inout_ PDEVICE_CONTEXT Ctx,
+    _In_ ULONG RequestType,
+    _In_ ULONG IoControlCode)
+{
+    ULONGLONG dueTime100ns = GaYmReserveConfiguredJitterDueTime100ns(Ctx, RequestType, IoControlCode);
+    if (dueTime100ns != 0) {
+        GaYmDelayUntilScheduledTime100ns(dueTime100ns);
     }
 }
 #else
+static VOID GaYmResetJitterSchedule(
+    _Inout_ PDEVICE_CONTEXT Ctx)
+{
+    UNREFERENCED_PARAMETER(Ctx);
+}
+
 static VOID GaYmApplyConfiguredJitter(
     _In_ PDEVICE_CONTEXT Ctx,
     _In_ ULONG RequestType,
@@ -1631,6 +1713,7 @@ VOID GaYmEvtCtlIoDeviceControl(
                 break;
             }
             RtlCopyMemory(&ctx->JitterConfig, inBuf, sizeof(GAYM_JITTER_CONFIG));
+            GaYmResetJitterSchedule(ctx);
             GAYM_LOG_INFO("CDO: Jitter config: enabled=%d min=%lu max=%lu us",
                 ctx->JitterConfig.Enabled,
                 ctx->JitterConfig.MinDelayUs,
@@ -1808,6 +1891,8 @@ NTSTATUS GaYmEvtDeviceAdd(
     ctx->IsInD0         = FALSE;
     KeInitializeSpinLock(&ctx->ReportLock);
     KeInitializeSpinLock(&ctx->TelemetryLock);
+    KeInitializeSpinLock(&ctx->JitterScheduleLock);
+    GaYmResetJitterSchedule(ctx);
     GaYmResetTelemetry(ctx);
 
     /* ── Identify device (VID/PID → device table) ── */
@@ -2148,6 +2233,7 @@ NTSTATUS GaYmEvtReleaseHardware(
     ctx->IsInD0         = FALSE;
     ctx->OverrideEnabled = FALSE;
     ctx->HasReport       = FALSE;
+    GaYmResetJitterSchedule(ctx);
 
     if (g_ControlDevice) {
         PCONTROL_DEVICE_CONTEXT ctlCtx = ControlGetContext(g_ControlDevice);
@@ -2168,6 +2254,7 @@ NTSTATUS GaYmEvtD0Entry(
 {
     PDEVICE_CONTEXT ctx = DeviceGetContext(Device);
     ctx->IsInD0 = TRUE;
+    GaYmResetJitterSchedule(ctx);
 
     if (g_ControlDevice) {
         PCONTROL_DEVICE_CONTEXT ctlCtx = ControlGetContext(g_ControlDevice);
@@ -2192,6 +2279,7 @@ NTSTATUS GaYmEvtD0Exit(
 {
     PDEVICE_CONTEXT ctx = DeviceGetContext(Device);
     ctx->IsInD0 = FALSE;
+    GaYmResetJitterSchedule(ctx);
 
     if (g_ControlDevice) {
         PCONTROL_DEVICE_CONTEXT ctlCtx = ControlGetContext(g_ControlDevice);
@@ -2220,6 +2308,7 @@ VOID GaYmEvtSurpriseRemoval(_In_ WDFDEVICE Device)
 {
     PDEVICE_CONTEXT ctx = DeviceGetContext(Device);
     ctx->IsInD0 = FALSE;
+    GaYmResetJitterSchedule(ctx);
 
     ctx->OverrideEnabled = FALSE;
     ctx->HasReport       = FALSE;

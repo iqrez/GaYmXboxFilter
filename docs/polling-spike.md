@@ -235,6 +235,49 @@ Current best read:
 - the observable transfer function has a threshold or bursty behavior instead of a smooth proportional response
 - if real hardware-visible poll control exists here, the next spike should focus on shaping or scheduling the delay more precisely rather than just increasing fixed stall time
 
+## Shaped Scheduler Result
+
+That next scheduling experiment is now complete.
+
+Implementation change:
+
+- replaced the crude per-completion busy stall with a per-device due-time scheduler on the parent probe
+- the lower parent path now reserves the next completion slot under a spin lock
+- at passive IRQL it sleeps the coarse portion with `KeDelayExecutionThread`
+- it only uses `KeStallExecutionProcessor` for the short tail
+
+Measured with the same lower-target sweep:
+
+- `0 us`
+- `1000 us`
+- `2000 us`
+- `3000 us`
+- `4000 us`
+- `5000 us`
+
+Observed averages per `500 ms` window:
+
+| Lower pacing interval | Lower parent cadence | Upper cadence |
+| --- | ---: | ---: |
+| `0 us` | `125.3` | `128.7` |
+| `1000 us` | `125.5` | `126.7` |
+| `2000 us` | `125.8` | `98.2` |
+| `3000 us` | `126.5` | `85.7` |
+| `4000 us` | `122.8` | `74.8` |
+| `5000 us` | `98.3` | `49.5` |
+
+Interpretation:
+
+- the upper-visible effect is now materially smoother than the old fixed-stall experiment
+- `2000-5000 us` produces a progressive drop in upper cadence instead of a near-flat response followed by a sudden cliff
+- the lower parent cadence still resists change until the higher end of the range, which suggests the parent path is gating or batching requests before the effect fully shows up in its own counters
+
+Current best read:
+
+- shaping the parent-path delay is a better experimental lever than adding a blind fixed stall
+- the composite parent is still the only lower path that has shown causal control over upper-visible polling behavior
+- this is now strong evidence that any real hardware-polling research should stay on the composite-parent side, not the USB `02FF` child or the supported HID-child product line
+
 ## Guardrails
 
 - Keep the stable product line untouched.

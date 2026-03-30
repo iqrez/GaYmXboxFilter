@@ -68,8 +68,10 @@ typedef struct _DEVICE_CONTEXT {
     GAYM_REPORT                     LastSemanticCaptureReport;
     GAYM_TRACE_ENTRY                Trace[GAYM_TRACE_HISTORY_COUNT];
 
-    /* Dev-only completion delay for spike experiments */
+    /* Dev-only completion pacing for polling-spike experiments */
     GAYM_JITTER_CONFIG              JitterConfig;
+    KSPIN_LOCK                      JitterScheduleLock;
+    ULONGLONG                       NextJitterDueTime100ns;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)

@@ -311,3 +311,33 @@ Interpretation:
 - `1000-3000 us` does not create a stable observable upper-path change
 - `5000 us` still causes a clear drop in both lower and upper cadence
 - the parent-path transfer function looks thresholded or bursty, not smoothly proportional
+
+## Composite-Parent Shaped Scheduler Result
+
+Follow-up measurement after replacing the fixed per-completion stall with a due-time scheduler on the parent path.
+
+Measured with:
+
+```text
+GAYM_CONTROL_TARGET=lower
+GaYmCLI jitter <value> <value>
+CadenceProbe.exe 3 500 lower 0
+CadenceProbe.exe 3 500 upper 0
+```
+
+Observed averages per `500 ms` window:
+
+| Lower pacing interval | Lower avg / `500 ms` | Upper avg / `500 ms` |
+| --- | ---: | ---: |
+| `0 us` | `125.3` | `128.7` |
+| `1000 us` | `125.5` | `126.7` |
+| `2000 us` | `125.8` | `98.2` |
+| `3000 us` | `126.5` | `85.7` |
+| `4000 us` | `122.8` | `74.8` |
+| `5000 us` | `98.3` | `49.5` |
+
+Interpretation:
+
+- the shaped scheduler produces a smoother upper-path transfer curve than the old fixed-stall experiment
+- `2000-5000 us` now gives a progressive drop in upper cadence instead of a mostly flat response followed by a single cliff at `5000 us`
+- the lower parent cadence still bends later than the upper path, which implies the parent-side pacing is visible upstream before it becomes obvious in the parent counters themselves

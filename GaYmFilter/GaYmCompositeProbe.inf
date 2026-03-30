@@ -4,7 +4,7 @@ Class=Extension
 ClassGuid={e2f84ce7-8efa-411c-aa69-97454ca4cb57}
 Provider=%GAYM%
 ExtensionId={5d57c4fe-349e-4107-9a0f-899c21a12231}
-DriverVer=03/29/2026,1.0.1.1
+DriverVer=03/30/2026,1.0.1.2
 CatalogFile=GaYmCompositeProbe.cat
 PnpLockdown=1
 

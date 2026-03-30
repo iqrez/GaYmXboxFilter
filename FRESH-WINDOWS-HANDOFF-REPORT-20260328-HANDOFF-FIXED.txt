@@ -1,0 +1,240 @@
+1. Environment
+
+Windows 11 Pro 10.0.26200, x64, elevated PowerShell.
+Target controller present as:
+HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000
+
+From the fixed bundle docs alone, the supported target was understandable:
+- supported architecture: hybrid HID-child stack
+- expected live stack: GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+- supported hardware target: wired Xbox One / Series controller on HID\VID_045E&PID_02FF&IG_00
+
+Baseline live stack before install:
+xinputhid -> HidUsb
+
+Bundle under test:
+E:\Users\IQRez\Desktop\GaYmXboxFilter-hybrid-known-good-20260328-transition-validated-handoff-fixed-bundle.zip
+
+Extracted to:
+E:\Users\IQRez\Desktop\GaYmXboxFilter_handoff_fixed_validation_20260328_034139
+
+2. Commands run
+
+Extraction and inspection:
+Expand-Archive -LiteralPath "E:\Users\IQRez\Desktop\GaYmXboxFilter-hybrid-known-good-20260328-transition-validated-handoff-fixed-bundle.zip" -DestinationPath "E:\Users\IQRez\Desktop\GaYmXboxFilter_handoff_fixed_validation_20260328_034139" -Force
+Get-Content -Raw README.md
+Get-Content -Raw docs\install.md
+Get-Content -Raw docs\diagnostics.md
+Get-Content -Raw docs\rollback.md
+Get-Content -Raw scripts\prepare-test-machine.ps1
+Get-Content -Raw scripts\install-driver.ps1
+Get-Content -Raw scripts\smoke-test.ps1
+Get-Content -Raw scripts\release-check.ps1
+Get-Content -Raw scripts\transition-check.ps1
+Get-Content -Raw scripts\uninstall-driver.ps1
+Get-Content -Raw scripts\common-paths.ps1
+
+Environment and device checks:
+Get-ComputerInfo | Select-Object OsName,OsVersion,WindowsVersion,OsArchitecture,CsSystemType,CsModel,CsManufacturer
+Get-PnpDevice -Class HIDClass | Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' }
+cmd /c bcdedit /enum "{current}"
+pnputil /enum-devices /instanceid "HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000" /stack /drivers
+
+Bundle workflow executed:
+.\scripts\prepare-test-machine.ps1
+.\scripts\prepare-test-machine.ps1 -EnableTestSigning
+.\scripts\install-driver.ps1 -Configuration Release
+.\scripts\smoke-test.ps1 -Configuration Release
+.\scripts\release-check.ps1 -Configuration Release
+.\scripts\uninstall-driver.ps1
+pnputil /enum-drivers | Select-String -Pattern 'GaYmXboxFilter.inf|GaYmFilter.inf'
+pnputil /enum-devices /instanceid "HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000" /stack /drivers
+
+Cleanup of boot configuration changed during validation:
+cmd /c bcdedit /set testsigning off
+cmd /c bcdedit /enum "{current}"
+
+3. Results by step
+
+1. Confirm supported architecture and supported hardware target from docs alone
+PASS
+The fixed bundle docs clearly identify the target device and expected hybrid stack.
+
+2. Run .\scripts\prepare-test-machine.ps1
+PASS
+The script ran from the extracted bundle root, imported the bundled certificate, detected testsigning state, and gave a clear next step.
+
+Observed output included:
+- Artifact mode: Bundle
+- Current testsigning state: DISABLED
+- Recommended next step: bcdedit /set testsigning on
+- If Secure Boot blocks test mode, disable Secure Boot for the test machine or use a production-signed package instead
+
+3. If testsigning is disabled, follow the documented flow
+PARTIAL
+.\scripts\prepare-test-machine.ps1 -EnableTestSigning succeeded and set testsigning on.
+Exact key output:
+The operation completed successfully.
+WARNING: Testsigning was enabled. Reboot before attempting driver install.
+
+I did not perform a full machine reboot in-session, so the post-reboot path was not fully validated.
+
+4. Install the driver stack from the extracted bundle
+FAIL
+The fixed script correctly found the bundle-root packages and added both drivers:
+- GaYmFilter.inf published as oem96.inf
+- GaYmXboxFilter.inf published as oem97.inf
+
+However, because the required reboot had not yet occurred, the device entered a bad intermediate state and install-driver.ps1 crashed instead of handling it cleanly.
+
+Exact failure text:
+E:\Users\IQRez\Desktop\GaYmXboxFilter_handoff_fixed_validation_20260328_034139\scripts\install-driver.ps1 : Cannot bind argument to parameter 'StackNames' because it is null.
+
+5. Verify the live stack matches GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+FAIL
+After install without reboot, the device showed:
+- Status: Problem
+- Problem Code: 52 (0x34) [CM_PROB_UNSIGNED_DRIVER]
+- Problem Status: 0xC0000428
+- Stack: HidUsb
+
+The expected hybrid stack was not visible.
+
+6. Run .\scripts\smoke-test.ps1
+FAIL
+Exact failure text:
+The live stack is not the supported hybrid path for HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000.
+
+The emitted stack text showed Problem Code 52 and only HidUsb in the active stack.
+
+7. Run .\scripts\release-check.ps1
+FAIL
+release-check.ps1 got farther than the earlier bundle:
+- it ran bundle-root install
+- recognized the packages as already present on rerun
+- reached Pass 1 Smoke
+- then failed because the live stack was not healthy
+- finally performed rollback automatically
+
+release-check did not reach its reboot-boundary resume state.
+
+8. If release-check pauses at a reboot boundary, reboot and rerun it
+NOT REACHED
+The script failed during Pass 1 Smoke before any resumable reboot boundary.
+
+9. Run one manual unplug/replug transition check
+NOT REACHED
+The bundle now includes transition-check.ps1, but I did not run the manual transition flow because the stack never reached a healthy installed state after the required reboot step was skipped.
+
+10. Run one manual sleep/resume transition check
+NOT REACHED
+Same reason as step 9.
+
+11. Uninstall the stack cleanly
+PASS, with cleanup caveat
+release-check.ps1 final rollback removed both published driver packages, and a subsequent explicit uninstall reported:
+No published GaYm driver packages were found.
+
+Post-uninstall state:
+- no GaYm packages remained in DriverStore
+- live stack returned to xinputhid -> HidUsb
+
+Important residual-state note:
+prepare-test-machine.ps1 -EnableTestSigning left testsigning enabled in boot configuration, and uninstall does not revert that.
+I manually restored it with:
+cmd /c bcdedit /set testsigning off
+
+4. Docs gaps or confusing points
+
+- The docs are much improved versus the earlier bundle. They now match bundle-root paths, include prepare-test-machine, include transition-check, and give a correct exact-instance-id stack verification pattern.
+- The docs do say to reboot after enabling testsigning. That instruction is clear.
+- The docs do not say whether uninstall or rollback should revert testsigning or leave it enabled, which matters for a fresh test machine handoff.
+
+5. Script issues
+
+- prepare-test-machine.ps1 imports the same certificate multiple times from duplicate candidate paths and prints repeated "Already trusted" lines. That is noisy but not fatal.
+- install-driver.ps1 crashes with a null StackNames binding when the device is in a reboot-required disconnected/problem state. That should be handled as a warning or explicit reboot-required outcome, not as a PowerShell parameter-binding error.
+- release-check.ps1 does not guard against the pre-reboot Code 52 state. It proceeds into Pass 1 Smoke, fails there, and rolls back.
+- uninstall-driver.ps1 cleans DriverStore state correctly, but the broader operator workflow still leaves boot policy changes behind unless reverted separately.
+
+6. Final verdict: FAIL
+
+This handoff-fixed bundle is materially better than the prior one:
+- the required scripts are present
+- bundle-root path handling works
+- certificate bootstrap is included
+- the docs are much closer to operator-usable
+
+It still does not meet the stated handoff success criteria yet:
+- full reboot-dependent validation was not completed in-session
+- install-driver.ps1 crashes in the reboot-required intermediate state
+- release-check resume behavior was not reached
+- manual transition flows were not validated
+- uninstall does not address the testsigning boot-policy change made by prepare-test-machine
+
+The machine was returned to a clean driver state, and I manually restored testsigning to No after validation.
+
+7. Follow-up status after report
+
+What has not been proven yet is the post-install reboot result from the patched repo build.
+That is the remaining real question:
+after the required reboot, does the live stack become
+GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+
+Current interpretation of the prior evidence:
+- the same-boot failure evidence no longer looks like an attach-authoring bug by itself
+- it is also consistent with Windows deferring filter activation until reboot
+- the pre-reboot run therefore should not be treated as proof of a package attach defect
+
+Current machine state:
+- the GaYm packages were uninstalled
+- the investigation state files were removed
+- Windows reported that uninstall also requires a reboot
+- the machine is therefore still in a pending-uninstall state and not yet back to steady-state baseline
+
+Next high-value validation step:
+1. reboot once to finish the pending uninstall
+2. rerun .\scripts\install-driver.ps1 -Configuration Release
+3. reboot once more if install reports reboot required
+4. check the live stack before smoke
+
+Decision rule for the next pass:
+- if the post-install reboot produces the live hybrid stack, the remaining concern was reboot deferral rather than INF attach failure
+- if the post-install reboot still does not produce the hybrid stack after Windows has cleared reboot-required state, that is strong evidence of a real INF or driver attach defect
+
+8. Follow-up execution after reboot
+
+Observed after reboot to baseline:
+- uninstall had cleared back to the baseline live stack
+- baseline verified as xinputhid -> HidUsb
+- no GaYm packages remained in DriverStore before reinstall
+
+Observed after rerunning .\scripts\install-driver.ps1 -Configuration Release:
+- both packages installed successfully again
+- install initially reported reboot required and saved out\install-driver-state.json
+- the immediate install snapshot still showed xinputhid -> HidUsb with pending declarative filters:
+  Upper=GaYmXInputFilter; Lower=GaYmFilter
+
+Critical follow-up observation on the same boot:
+- a subsequent pnputil stack query, without rebooting again, showed:
+  GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+- this is strong evidence that the patched repo build does attach successfully and that the earlier same-boot gap was Windows deferring activation, not an INF attach-authoring defect
+
+Additional script finding and fix:
+- smoke-test.ps1 initially blocked on the stale same-boot install checkpoint even though the live stack had already become hybrid
+- smoke-test.ps1 and release-check.ps1 were updated to clear that stale checkpoint automatically once the live stack is hybrid and the device reboot-required flag has cleared
+- install-driver.ps1 was updated to wait briefly for same-boot activation before saving a reboot checkpoint
+
+Validation result after those fixes:
+- .\scripts\smoke-test.ps1 -Configuration Release passed on the same boot once the live hybrid stack was active
+
+Current remaining boundary:
+- .\scripts\release-check.ps1 -Configuration Release completed Pass 1 successfully
+- during rollback reinstall for Pass 2, the live stack again became hybrid, but Windows still reported DEVPKEY_Device_IsRebootRequired = True
+- release-check therefore paused intentionally at the real reboot boundary for Pass 2 validation and wrote:
+  out\release-check-state.json
+
+Current machine state at handoff:
+- live stack is hybrid
+- release-check is paused awaiting one more reboot before Pass 2 validation resume
+- rerun .\scripts\release-check.ps1 -Configuration Release after reboot to continue from the saved state

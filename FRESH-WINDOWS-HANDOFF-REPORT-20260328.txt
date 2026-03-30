@@ -1,0 +1,158 @@
+1. Environment
+
+Windows 11 Pro 10.0.26200, x64, elevated PowerShell.
+Test machine identified the target controller as:
+HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000
+
+From the bundle docs alone, the supported target was understandable:
+- supported architecture: hybrid HID-child stack
+- expected live stack: GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+- supported hardware target: wired Xbox One / Series controller on VID_045E / PID_02FF, specifically HID\VID_045E&PID_02FF&IG_00
+
+Baseline live stack before install attempt:
+xinputhid -> HidUsb
+
+Additional environment observations:
+- bcdedit /enum "{current}" did not show testsigning enabled
+- both bundle catalog files were signed by self-signed WDKTestCert IQRez certificate
+- Get-AuthenticodeSignature reported:
+  A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider
+
+2. Commands run
+
+Extraction and inspection:
+Expand-Archive -LiteralPath "E:\Users\IQRez\Desktop\GaYmXboxFilter-hybrid-known-good-20260328-transition-validated-bundle.zip" -DestinationPath "E:\Users\IQRez\Desktop\GaYmXboxFilter_bundle_validation_20260328_030339" -Force
+Get-Content -Raw README.md
+Get-Content -Raw docs\install.md
+Get-Content -Raw docs\diagnostics.md
+Get-Content -Raw docs\rollback.md
+Get-Content -Raw scripts\install-driver.ps1
+Get-Content -Raw scripts\smoke-test.ps1
+Get-Content -Raw scripts\release-check.ps1
+Get-Content -Raw scripts\uninstall-driver.ps1
+
+Environment and device checks:
+Get-ComputerInfo | Select-Object OsName,OsVersion,WindowsVersion,OsArchitecture,CsSystemType,CsModel,CsManufacturer
+Get-PnpDevice -Class HIDClass | Where-Object { $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*' }
+pnputil /enum-devices /connected /instanceid "HID\VID_045E&PID_02FF&IG_00\*" /stack
+pnputil /enum-devices /instanceid "HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000" /stack /drivers
+pnputil /enum-drivers | Select-String -Pattern 'GaYmXboxFilter.inf|GaYmFilter.inf'
+cmd /c bcdedit /enum "{current}"
+Get-AuthenticodeSignature driver-lower\package\gaymfilter.cat
+Get-AuthenticodeSignature driver-upper\package\gaymxboxfilter.cat
+
+Documented bundle workflow, as shipped:
+.\scripts\install-driver.ps1
+.\scripts\smoke-test.ps1
+.\scripts\release-check.ps1
+.\scripts\transition-check.ps1 -InteractiveUnplugReplug
+.\scripts\transition-check.ps1 -InteractiveSleepResume
+.\scripts\uninstall-driver.ps1
+
+Constrained salvage pass using only files already inside the bundle, not part of the documented workflow:
+New-Item -ItemType Directory -Force out\dev\driver-lower\package,out\dev\driver-upper\package,out\dev\tools
+Copy-Item driver-lower\package\* out\dev\driver-lower\package
+Copy-Item driver-upper\package\* out\dev\driver-upper\package
+Copy-Item tools\*.exe out\dev\tools
+
+Retry after salvage:
+.\scripts\install-driver.ps1
+.\scripts\smoke-test.ps1
+.\scripts\release-check.ps1
+.\scripts\uninstall-driver.ps1
+
+3. Results by step
+
+1. Confirm supported architecture and supported hardware target from docs alone
+PASS
+The docs clearly identify the 02FF HID child target and the expected hybrid stack.
+
+2. Install the driver stack from the bundle
+FAIL
+As shipped, install-driver.ps1 failed immediately because it expects repo-style staged content under out\dev that is not present in the extracted bundle.
+
+Exact failure text:
+Driver package not found:
+E:\Users\IQRez\Desktop\GaYmXboxFilter_bundle_validation_20260328_030339\out\dev\driver-lower\package\GaYmFilter.inf.
+Run scripts\build-driver.ps1 first or use -Build.
+
+After a manual layout repair using only bundle files, install still failed on certificate trust.
+
+Exact failure text:
+Failed to add driver package: A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider.
+Lower filter install failed.
+
+3. Verify the live stack matches GaYmXInputFilter -> xinputhid -> GaYmFilter -> HidUsb
+FAIL
+The live stack remained:
+xinputhid -> HidUsb
+
+4. Run the smoke test
+FAIL
+As shipped, smoke-test.ps1 failed because it expects GaYmCLI.exe under out\dev\tools, which the bundle does not provide in that layout.
+
+Exact failure text:
+GaYmCLI.exe not found at
+E:\Users\IQRez\Desktop\GaYmXboxFilter_bundle_validation_20260328_030339\out\dev\tools\GaYmCLI.exe. Run scripts\build-tools.ps1 first or use -BuildTools.
+
+After the manual layout repair, smoke-test.ps1 ran farther but failed because the live stack never installed:
+The live stack is not the supported hybrid path for HID\VID_045E&PID_02FF&IG_00\7&15036BEB&0&0000.
+
+5. Run the full release check
+FAIL
+As shipped, release-check.ps1 failed at install because the expected out\dev\driver-lower\package path did not exist.
+After the manual layout repair, it failed at install on the untrusted signing certificate.
+The reboot boundary and resume path were never reached.
+
+6. If the release check pauses at a reboot boundary, reboot and rerun it to confirm it resumes automatically
+NOT REACHED
+Install failed before the script could pause at its reboot boundary.
+
+7. Run one manual unplug/replug transition check
+FAIL
+The prompt and docs require scripts\transition-check.ps1, but that file was not present in the extracted bundle.
+
+Exact failure text:
+.\scripts\transition-check.ps1 : The term '.\scripts\transition-check.ps1' is not recognized as the name of a cmdlet, function, script file, or operable program.
+
+8. Run one manual sleep/resume transition check
+FAIL
+Same cause as step 7. The required script is absent from the bundle.
+
+9. Uninstall the stack cleanly using the bundle script
+PASS, with limitation
+uninstall-driver.ps1 ran and reported:
+No published GaYm driver packages were found.
+
+Post-checks showed:
+- no GaYmXboxFilter.inf or GaYmFilter.inf published in DriverStore
+- live controller stack remained baseline xinputhid -> HidUsb
+
+The machine was left clean, but only because installation never succeeded.
+
+4. Docs gaps or confusing points
+
+- The bundle is presented as operator-ready, but the docs and scripts still assume repo/build staging under out\dev and mention build-driver.ps1 and build-tools.ps1, which are not included in the operator bundle.
+- The handoff prompt explicitly requires scripts\transition-check.ps1, but the bundle does not ship that script.
+- docs\install.md lists a generic prerequisite of a test-signing environment, but does not tell a fresh operator how to trust the included test certificate or whether testsigning must be enabled.
+- The documented manual stack verification command using /connected and an instanceid wildcard returned "No devices were found on the system" on this machine even though the target HID child existed. Using the exact instance ID worked.
+
+5. Script issues
+
+- scripts\install-driver.ps1 hard-codes package lookup under out\dev or out\release instead of locating driver-lower and driver-upper relative to the bundle root.
+- scripts\smoke-test.ps1 hard-codes tool lookup under out\dev or out\release instead of using the shipped tools folder.
+- scripts\release-check.ps1 depends on the same out\dev layout and also expects transition-check.ps1 to exist.
+- scripts\release-check.ps1 prints "=== Final Rollback ===" even after an earlier hard failure. That is not wrong, but it can dilute the real root cause when scanning logs.
+- The operator bundle includes tools\obj build artifacts, which are unnecessary noise for a release handoff package.
+
+6. Final verdict: FAIL
+
+This release bundle is not sufficient on its own for a fresh operator or contractor to install, validate, understand, and recover the supported product without extra explanation.
+
+Reasons:
+- required transition-check.ps1 is missing from the bundle
+- install, smoke, and release-check scripts do not run directly from the extracted bundle because they expect repo-style out\dev staging
+- driver installation requires certificate trust/bootstrap steps that are not documented in an operator-complete way
+- reboot resume behavior could not be validated because install failed before that phase
+
+Rollback and uninstall left the machine clean, but only because the driver stack never attached.

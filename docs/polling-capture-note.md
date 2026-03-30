@@ -3048,3 +3048,32 @@ Interpretation:
   - `0x0001B1F0`
   - `0x0003634C`
   - `0x00015D30`
+
+## USBXHCI 1B1F0 Window Map
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-window-map.ps1
+```
+
+That pass turns the raw `0x0001B1F0` call sites into bounded timing and branch windows.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-window-map.txt`
+- bounded windows:
+  - `setup-and-bridge`
+  - `time-sampling-and-debug-gate`
+  - `timer-lifecycle-and-side-context`
+  - `final-handoff`
+
+Interpretation:
+
+- `0x0001B1F0` should not be treated as one undifferentiated body anymore
+- the highest-value timing windows are:
+  - `time-sampling-and-debug-gate`
+  - `timer-lifecycle-and-side-context`
+  - `final-handoff`
+- the `setup-and-bridge` region is lower-value because it is dominated by wrapper and alternate-bridge setup

@@ -2360,3 +2360,58 @@ with immediate follow-on context in:
 - `0x00001BE8`
 - `0x00058EC0`
 - `0x00058B00`
+
+## USBXHCI 1BC34 Follow Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1bc34-follow-assessment.ps1
+```
+
+That read-only pass resolves the direct `0x0001BC34` callee set:
+
+- instrumented leg:
+  - `0x00001BE8`
+- opaque leg:
+  - `0x00058EC0`
+- tiny thunk:
+  - `0x00058B00`
+
+Observed on this machine:
+
+- `0x00001BE8`
+  - size:
+    - `341`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00058EC0`
+  - size:
+    - `263`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x00058B00`
+  - size:
+    - `6`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+
+Interpretation:
+
+- none of the direct `0x0001BC34` callees beats the next same-band body as a deep target
+- `0x00001BE8` is instrumented
+- `0x00058EC0` is opaque
+- `0x00058B00` is a thunk
+
+So the next clean offline target is now:
+
+- `0x0001C090`

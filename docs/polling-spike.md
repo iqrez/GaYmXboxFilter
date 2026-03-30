@@ -1887,3 +1887,45 @@ with immediate follow-on context in:
 - `0x00001BE8`
 - `0x00058EC0`
 - `0x00058B00`
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-1bc34-follow-assessment.ps1`
+
+Current `0x0001BC34` follow-on assessment on this machine:
+
+- compared follow-ons:
+  - `0x00001BE8`
+  - `0x00058EC0`
+  - `0x00058B00`
+- recommended next:
+  - `0x0001C090`
+
+Why:
+
+- `0x00001BE8`
+  - is another instrumented leg:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00058EC0`
+  - is an opaque slab:
+    - size `263`
+    - `0` direct internal
+    - `0` direct IAT
+- `0x00058B00`
+  - is only a tiny thunk:
+    - size `6`
+    - `0` direct internal
+    - `0` direct IAT
+
+Interpretation:
+
+- the direct `0x0001BC34` callee set does not contain a better next deep target
+- one leg is instrumented
+- one leg is opaque
+- one leg is just a thunk
+- so the next sensible offline move is to step sideways to the next substantial same-band body instead of following those direct callees further
+
+So the next clean offline target is now:
+
+- `0x0001C090`

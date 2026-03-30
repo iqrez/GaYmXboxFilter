@@ -463,3 +463,16 @@ That matters because it narrows the host-stack research target on this box:
 
 - the next serious `hidusbf`-style research candidate is the `USBXHCI` path
 - not `USBPORT.SYS`, which is not the active controller path for this device on this machine
+
+Follow-up `USBXHCI` recon showed:
+
+- there are two present `USBXHCI` controllers on this machine
+- the Xbox target is hanging from:
+  - `PCI\VEN_8086&DEV_7AE0&SUBSYS_86941043&REV_11\3&11583659&0&A0`
+  - `Intel(R) USB 3.20 eXtensible Host Controller - 1.20 (Microsoft)`
+- active `USBXHCI.SYS` image:
+  - `C:\Windows\System32\drivers\USBXHCI.SYS`
+  - version `10.0.26100.2454`
+  - SHA256 `B010BFE5944E1C339D0216537137A29F7BE8391B4F0A3729490E44B08D06AF55`
+
+That is the concrete host-controller identity any future patch/intercept experiment would have to target on this box.

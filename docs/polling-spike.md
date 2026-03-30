@@ -426,3 +426,17 @@ First capture on this machine identified the live host path as:
 - `dc1-controller -> USBHUB3 -> USBXHCI -> pci -> ACPI`
 
 So the next host-stack research target on this box is the `USBXHCI` path, not `USBPORT.SYS`.
+
+Follow-up recon narrowed that further:
+
+- there are two present `USBXHCI` controllers on this machine
+- the Xbox path is attached to:
+  - `PCI\VEN_8086&DEV_7AE0&SUBSYS_86941043&REV_11\3&11583659&0&A0`
+  - `Intel(R) USB 3.20 eXtensible Host Controller - 1.20 (Microsoft)`
+- current active image:
+  - `C:\Windows\System32\drivers\USBXHCI.SYS`
+  - version `10.0.26100.2454`
+
+The spike now includes a dedicated read-only capture for that layer:
+
+- `scripts\capture-usbxhci-recon.ps1`

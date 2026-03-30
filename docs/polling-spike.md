@@ -1825,3 +1825,65 @@ with immediate follow-on context in:
 - `0x0001F9A4`
 - `0x00005BC0`
 - `0x00006A08`
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-secondary-branch-assessment.ps1`
+
+Current `0x0001BAC0` secondary-branch assessment on this machine:
+
+- compared targets:
+  - `0x0001BC34`
+  - `0x0001BF58`
+  - `0x0001F9A4`
+  - `0x00005BC0`
+  - `0x00006A08`
+- recommended next:
+  - `0x0001BC34`
+
+Why:
+
+- `0x0001BC34`
+  - is the only substantive IRP/completion-style body in this set:
+    - size `798`
+    - `7` direct internal
+    - `2` direct IAT
+  - direct imports:
+    - `IoReuseIrp`
+    - `IoSetCompletionRoutineEx`
+  - internal fan-out includes:
+    - `0x00001BE8`
+    - `0x00058EC0`
+    - `0x00058B00`
+- `0x0001BF58`
+  - demotes to trace-heavy side context:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x0001F9A4`
+  - also demotes to trace-heavy side context:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00005BC0`
+  - is only a tiny reconnecting bridge:
+    - `0x00006A44`
+- `0x00006A08`
+  - is another small reconnecting bridge:
+    - `0x00041EC0`
+
+Interpretation:
+
+- the pivot away from the `0x00056DBC` band was correct
+- the cleanest remaining body on the secondary branch is `0x0001BC34`
+- the other four candidates should be treated as:
+  - trace-heavy context
+  - or small reconnectors into older helper machinery
+
+So the next clean offline target is now:
+
+- `0x0001BC34`
+
+with immediate follow-on context in:
+
+- `0x00001BE8`
+- `0x00058EC0`
+- `0x00058B00`

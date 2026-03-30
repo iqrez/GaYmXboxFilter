@@ -2275,3 +2275,88 @@ with immediate follow-on context in:
 - `0x0001F9A4`
 - `0x00005BC0`
 - `0x00006A08`
+
+## USBXHCI Secondary Branch Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-secondary-branch-assessment.ps1
+```
+
+That read-only pass resolves the current `0x0001BAC0` branch split:
+
+- substantive body:
+  - `0x0001BC34`
+- trace-heavy side legs:
+  - `0x0001BF58`
+  - `0x0001F9A4`
+- small reconnecting bridges:
+  - `0x00005BC0`
+  - `0x00006A08`
+
+Observed on this machine:
+
+- `0x0001BC34`
+  - size:
+    - `798`
+  - direct internal:
+    - `7`
+  - direct IAT:
+    - `2`
+  - visible direct behavior includes:
+    - `0x00001BE8`
+    - `0x00058EC0`
+    - `0x00058B00`
+    - `IoReuseIrp`
+    - `IoSetCompletionRoutineEx`
+- `0x0001BF58`
+  - size:
+    - `294`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x0001F9A4`
+  - size:
+    - `334`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00005BC0`
+  - size:
+    - `22`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x00006A44`
+- `0x00006A08`
+  - size:
+    - `53`
+  - direct internal:
+    - `1`
+  - visible direct behavior:
+    - `0x00041EC0`
+
+Interpretation:
+
+- `0x0001BC34` is the only target in this set that still looks like a substantive IRP/completion body
+- `0x0001BF58` and `0x0001F9A4` are both trace-heavy side context
+- `0x00005BC0` and `0x00006A08` are both small reconnecting bridges, not primary next targets
+
+So the next clean offline target is now:
+
+- `0x0001BC34`
+
+with immediate follow-on context in:
+
+- `0x00001BE8`
+- `0x00058EC0`
+- `0x00058B00`

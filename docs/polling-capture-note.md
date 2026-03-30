@@ -552,3 +552,59 @@ Interpretation:
 - the host-layer research target is no longer just "some `USBXHCI` build"
 - we now have concrete image anchors for this exact `10.0.26100.2454` binary
 - that is enough to support further offline mapping work without touching host-stack behavior yet
+
+## USBXHCI Feature Map Recon
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-feature-map.ps1
+```
+
+That read-only pass builds a heuristic feature map by:
+
+- parsing the AMD64 runtime-function table from `.pdata`
+- collecting category anchors from `.rdata`
+- scanning executable sections for RIP-relative references back to those anchors
+- clustering likely code regions by feature instead of by raw string presence alone
+
+Observed on this machine:
+
+- runtime function table entries:
+  - `1294`
+- feature bands:
+  - controller/slot/root-hub candidates:
+    - `0x00001348 .. 0x00078BE0`
+  - endpoint candidates:
+    - `0x00007D60 .. 0x00054F74`
+  - ring candidates:
+    - `0x0000A398 .. 0x0005346C`
+  - transfer candidates:
+    - `0x00002964 .. 0x00054E60`
+  - interrupter candidates:
+    - `0x000410B4 .. 0x00081E4D`
+
+Notable function clusters:
+
+- controller/slot/root-hub:
+  - `0x0000A640-0x0000A7F4`
+  - `0x0000B2A0-0x0000B472`
+  - `0x00018AD4-0x00018DCB`
+- endpoint:
+  - `0x00007D60-0x0000813A`
+  - `0x00008250-0x0000844D`
+  - `0x000318C4-0x00031987`
+- ring/transfer:
+  - `0x0000A398-0x0000A62F`
+  - `0x00019F40-0x00019FE8`
+  - `0x0003D690-0x0003DF6D`
+  - `0x00052A74-0x00052C46`
+- interrupter:
+  - `0x000410B4-0x00041382`
+  - `0x0007B5D0-0x0007BAF3`
+  - `0x00081980-0x00081E4D`
+
+Interpretation:
+
+- the image-specific target is now narrowed to a finite set of likely controller, endpoint, ring/transfer, and interrupter regions
+- the next deeper read-only step can focus on those function bands instead of the whole `USBXHCI.SYS` image

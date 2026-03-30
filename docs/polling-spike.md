@@ -501,3 +501,52 @@ Interpretation:
 - a future host-stack experiment is still high-risk, but it is no longer blind
 - this image exposes enough internal naming and structural anchors to support deeper offline reverse engineering if we choose to go there
 - the next stage, if pursued, should stay read-only and build function/feature maps from these anchors before any attempt to intercept or patch host-controller behavior
+
+That next read-only step now exists too:
+
+- `scripts\capture-usbxhci-feature-map.ps1`
+
+Current feature-map result on this machine:
+
+- runtime function count:
+  - `1294`
+- anchor categories:
+  - controller/slot/root-hub anchors in `.rdata` from `0x0005BA7F` through `0x0005E530`
+  - endpoint anchors from `0x0005B6F7` through `0x000618C8`
+  - ring anchors from `0x0005B5C0` through `0x00060700`
+  - transfer anchors from `0x0005B5C0` through `0x00061530`
+  - interrupter anchors from `0x0005BF18` through `0x00070E74`
+- candidate function bands:
+  - controller: `0x00001348 .. 0x00078BE0`
+  - endpoint: `0x00007D60 .. 0x00054F74`
+  - ring: `0x0000A398 .. 0x0005346C`
+  - transfer: `0x00002964 .. 0x00054E60`
+  - interrupter: `0x000410B4 .. 0x00081E4D`
+
+Notable clusters from the heuristic pass:
+
+- controller/slot/root-hub:
+  - `0x0000A640-0x0000A7F4`
+  - `0x0000B2A0-0x0000B472`
+  - `0x00018AD4-0x00018DCB`
+  - `0x00026440-0x000277A7`
+- endpoint:
+  - `0x00007D60-0x0000813A`
+  - `0x00008250-0x0000844D`
+  - `0x000318C4-0x00031987`
+  - `0x00035038-0x000352F6`
+- ring/transfer:
+  - `0x0000A398-0x0000A62F`
+  - `0x00019F40-0x00019FE8`
+  - `0x0003D690-0x0003DF6D`
+  - `0x00052A74-0x00052C46`
+- interrupter:
+  - `0x000410B4-0x00041382`
+  - `0x0007B5D0-0x0007BAF3`
+  - `0x00081980-0x00081E4D`
+
+Interpretation:
+
+- we now have a defensible image-specific shortlist of likely code regions for controller, endpoint, ring/transfer, and interrupter behavior
+- that is enough to support a deeper offline mapping pass without touching live host-stack behavior
+- the next read-only stage, if pursued, should focus on correlating these candidate functions with unwind boundaries, section placement, and import usage to separate control-plane logic from hot interrupt/transfer paths

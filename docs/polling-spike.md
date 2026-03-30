@@ -647,3 +647,62 @@ Interpretation:
   - `0x000077FC-0x00007B61`
   - `0x0001144D-0x00011916`
   - plus the shared helper anchors they call most often
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-helper-callmap.ps1`
+
+Current helper-centric result on this machine:
+
+- transfer-derived helper seeds discovered from the targeted map:
+  - `27`
+- selected helper functions mapped:
+  - `6`
+- captured helper call sites:
+  - `45`
+
+Top helper convergence findings:
+
+- the transfer side really does converge into a shared helper tier
+  - strongest seed:
+    - `0x00058B00`
+    - total inbound transfer calls: `7`
+    - unique transfer callers: `2`
+  - next strongest workhorse helpers:
+    - `0x00006BA0`
+    - `0x00010440`
+    - both with `3` inbound calls from transfer-event regions
+- the most important helper-to-helper edges are:
+  - `0x00006BA0 -> 0x00058B00` (`3` calls)
+  - `0x00010440 -> 0x00058B00` (`3` calls)
+  - `0x00004124 -> 0x00058B00` (`1` call)
+
+What that means structurally:
+
+- `0x00058B00` is not a rich standalone subsystem
+  - it is only `6` bytes long in the current image
+  - no direct outgoing internal or IAT calls were captured there
+  - so it looks more like a tiny shared thunk or dispatch shim than the real timing-control body
+- the higher-value helper bodies are the callers that collapse into it
+  - `0x00006BA0` carries:
+    - repeated `KeAcquireSpinLockRaiseToDpc`
+    - repeated `KeReleaseSpinLock`
+    - `IoQueueWorkItem`
+    - `KeGetCurrentIrql`
+  - `0x00010440` carries:
+    - repeated `KeAcquireSpinLockRaiseToDpc`
+    - repeated `KeReleaseSpinLock`
+    - `KfRaiseIrql`
+    - `KeLowerIrql`
+    - `IoFreeMdl`
+
+Interpretation:
+
+- the transfer-event regions do not immediately fan back out into unrelated code
+- they converge first into a small helper tier, and that tier itself converges on a tiny shared thunk at `0x00058B00`
+- so the next serious offline target set is no longer the original transfer functions alone
+- it is:
+  - `0x00006BA0`
+  - `0x00010440`
+  - `0x00004124`
+  - with `0x00058B00` treated as a likely shared dispatch endpoint rather than the main body of interest

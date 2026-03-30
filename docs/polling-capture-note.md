@@ -748,3 +748,82 @@ Interpretation:
 - they connect into shared `.text` helper code and repeatedly touch the expected spinlock imports
 - the narrowed ring/TRB regions look more localized and debug-heavy
 - so if there is a future deep offline pass, it should start from the transfer clusters and the helper RVAs they converge on before spending time on the TRB logging bands
+
+## USBXHCI Transfer Helper Convergence Map
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-helper-callmap.ps1
+```
+
+That read-only pass pivots one layer deeper by:
+
+- taking the transfer-side helper targets discovered by the targeted call map
+- ranking them by aggregate inbound calls from transfer-event clusters
+- mapping only those helper functions' outgoing direct internal and IAT edges
+
+Observed on this machine:
+
+- transfer-derived helper seeds:
+  - `27`
+- selected helper functions:
+  - `6`
+- captured helper call sites:
+  - `45`
+
+Top helper seeds:
+
+- `0x00058B00`
+  - total inbound transfer calls: `7`
+  - unique transfer callers: `2`
+- `0x00006BA0`
+  - total inbound transfer calls: `3`
+- `0x00010440`
+  - total inbound transfer calls: `3`
+- `0x00004124`
+  - total inbound transfer calls: `2`
+- `0x000049B4`
+  - total inbound transfer calls: `2`
+- `0x00058BC0`
+  - total inbound transfer calls: `2`
+
+Key helper-to-helper edges:
+
+- `0x00006BA0 -> 0x00058B00` (`3` calls)
+- `0x00010440 -> 0x00058B00` (`3` calls)
+- `0x00004124 -> 0x00058B00` (`1` call)
+
+Key import signals inside the higher-value helpers:
+
+- `0x00006BA0`
+  - repeated:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+  - plus:
+    - `IoQueueWorkItem`
+    - `KeGetCurrentIrql`
+- `0x00010440`
+  - repeated:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `KfRaiseIrql`
+    - `KeLowerIrql`
+  - plus:
+    - `IoFreeMdl`
+
+Important structural note:
+
+- `0x00058B00` is only a `6`-byte function in this image
+- no direct outgoing internal or IAT calls were captured there
+- so it looks more like a tiny shared thunk/dispatch endpoint than the main body of interest
+
+Interpretation:
+
+- the transfer-event clusters do converge into a real helper tier before disappearing into the rest of the image
+- that tier then collapses into a tiny shared endpoint at `0x00058B00`
+- so the best next offline study targets are the upstream helper bodies:
+  - `0x00006BA0`
+  - `0x00010440`
+  - `0x00004124`
+- not the TRB/debug ring bands, and not `0x00058B00` by itself

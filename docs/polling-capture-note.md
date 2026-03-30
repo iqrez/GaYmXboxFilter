@@ -3432,8 +3432,10 @@ Observed on this machine:
 
 - build output:
   - `ObservationCaptureStub.exe`
+  - `ObservationCaptureLive.exe`
   - `ObservationRollup.exe`
 - inputs:
+  - live in-process waitable-timer event stream
   - stub-generated binary `UsbXhciProbeEventRecord` stream
   - text event rows file
   - binary `UsbXhciProbeEventRecord` stream
@@ -3445,6 +3447,6 @@ Observed on this machine:
 
 Interpretation:
 
-- the first observation pass now has both a bounded local producer and a parser/rollup tool
+- the first observation pass now has a bounded local producer, a live in-process producer, and a parser/rollup tool
 - the tool now consumes both text rows and the fixed-size binary event record from the current spike design
-- the full stub-to-parser path can now be exercised without touching the live host stack
+- the full live-timer-to-parser path can now be exercised without touching the host stack

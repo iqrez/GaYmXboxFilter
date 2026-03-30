@@ -550,3 +550,51 @@ Interpretation:
 - we now have a defensible image-specific shortlist of likely code regions for controller, endpoint, ring/transfer, and interrupter behavior
 - that is enough to support a deeper offline mapping pass without touching live host-stack behavior
 - the next read-only stage, if pursued, should focus on correlating these candidate functions with unwind boundaries, section placement, and import usage to separate control-plane logic from hot interrupt/transfer paths
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-cluster-profile.ps1`
+
+Current cluster-profile result on this machine:
+
+- candidate functions profiled from the current feature-map shortlist:
+  - `70`
+- direct RIP-relative IAT call/jump hits:
+  - `1333`
+- IAT entries parsed:
+  - `146`
+
+Key separation signals:
+
+- controller/slot/root-hub shortlist:
+  - top imports include `KeGetCurrentIrql`, `KeQueryUnbiasedInterruptTime`, timer APIs, and `KeDelayExecutionThread`
+  - strongest control-plane candidates include:
+    - `0x0001B1F0-0x0001B6D9`
+    - `0x0003634C-0x000366BC`
+    - `0x0000DC30-0x0000DE2D`
+- transfer shortlist:
+  - strongest import pattern is `KeAcquireSpinLockRaiseToDpc` / `KeReleaseSpinLock`
+  - strongest hot-path transfer candidates include:
+    - `0x0000320D-0x000038AE`
+    - `0x0001144D-0x00011916`
+    - `0x000077FC-0x00007B61`
+- ring shortlist:
+  - strongest import pattern is `DbgPrintEx`, with some `KeStallExecutionProcessor`
+  - strongest ring/control transition candidates include:
+    - `0x00052A74-0x00052C46`
+    - `0x000528DC-0x00052A6B`
+    - `0x0000A398-0x0000A62F`
+    - `0x0003D690-0x0003DF6D`
+- interrupter shortlist:
+  - two strongest candidates are pageable `PAGE` functions
+  - imports include `IoAllocateWorkItem`, `ExAllocatePool2`, `KeInitializeEvent`, and `WppRecorder`
+  - strongest interrupter candidates include:
+    - `0x0007B5D0-0x0007BAF3`
+    - `0x00081980-0x00081E4D`
+    - with one nonpageable `.text` candidate at `0x000410B4-0x00041382`
+
+Interpretation:
+
+- the read-only map is now good enough to distinguish likely hot transfer logic from controller-side orchestration and pageable interrupter/work-item code
+- if a deeper offline reverse-engineering pass is pursued, the highest-value next targets are the transfer and ring clusters above, not the entire image
+- the host-stack experiment is still not justified yet, but the candidate scope is now small enough to make targeted offline study realistic

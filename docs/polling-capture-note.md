@@ -608,3 +608,67 @@ Interpretation:
 
 - the image-specific target is now narrowed to a finite set of likely controller, endpoint, ring/transfer, and interrupter regions
 - the next deeper read-only step can focus on those function bands instead of the whole `USBXHCI.SYS` image
+
+## USBXHCI Cluster Profile Recon
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-cluster-profile.ps1
+```
+
+That read-only pass takes the current feature-map shortlist and correlates it with:
+
+- parsed import/IAT entries
+- direct RIP-relative IAT call/jump sites
+- unwind metadata from the AMD64 runtime-function table
+
+Observed on this machine:
+
+- candidate functions profiled:
+  - `70`
+- parsed IAT entries:
+  - `146`
+- direct RIP-relative IAT call/jump hits:
+  - `1333`
+
+Useful separation signals:
+
+- transfer candidates are dominated by:
+  - `KeAcquireSpinLockRaiseToDpc`
+  - `KeReleaseSpinLock`
+- ring candidates are dominated by:
+  - `DbgPrintEx`
+  - some `KeStallExecutionProcessor`
+- controller/slot/root-hub candidates show more:
+  - `KeGetCurrentIrql`
+  - `KeQueryUnbiasedInterruptTime`
+  - timer APIs
+  - `KeDelayExecutionThread`
+- interrupter candidates include two pageable `PAGE` functions using:
+  - `IoAllocateWorkItem`
+  - `ExAllocatePool2`
+  - `KeInitializeEvent`
+  - `WppRecorder`
+
+Representative candidates:
+
+- controller/control-plane:
+  - `0x0001B1F0-0x0001B6D9`
+  - `0x0003634C-0x000366BC`
+- transfer/hot path:
+  - `0x0000320D-0x000038AE`
+  - `0x0001144D-0x00011916`
+  - `0x000077FC-0x00007B61`
+- ring/control transition:
+  - `0x00052A74-0x00052C46`
+  - `0x000528DC-0x00052A6B`
+  - `0x0003D690-0x0003DF6D`
+- interrupter:
+  - `0x0007B5D0-0x0007BAF3`
+  - `0x00081980-0x00081E4D`
+  - `0x000410B4-0x00041382`
+
+Interpretation:
+
+- the read-only recon now separates likely hot transfer/ring logic from controller orchestration and pageable interrupter code well enough to guide deeper offline study

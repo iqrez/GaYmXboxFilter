@@ -2792,11 +2792,11 @@ Current state on this machine:
 - `ObservationCaptureKernel.exe` now requests a bounded observation session through `\\.\GaYmFilterCtl`
 - the lower filter CDO now supports `IOCTL_GAYM_CAPTURE_OBSERVATION` in dev builds
 - the active composite parent probe package was revved to `1.0.1.4` and installed as `oem65.inf`
-- Windows still reports `DEVPKEY_Device_IsRebootRequired = True`
-- same-boot live capture still returns `ERROR_INVALID_FUNCTION`
+- post-reboot live kernel capture now completes and emits `32` rows for `8` requested samples
+- `ObservationRollup.exe` now parses the returned binary stream cleanly with `8` completed chains and `0` malformed rows
 
 Interpretation:
 
 - the kernel-side emitter is implemented and packaged
 - tools and driver builds are green on the new shared 64-byte event record ABI
-- the remaining validation gap on this machine is the reboot boundary, not a compile-time or packaging defect
+- the bounded lower-filter capture path is now validated end-to-end on the live composite parent probe

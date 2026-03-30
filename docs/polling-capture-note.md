@@ -3465,10 +3465,11 @@ Validated on this machine:
 - driver build: `PASS`
 - composite probe package rebuild/sign: `PASS`
 - composite probe install to `oem65.inf`: `PASS`
-- live kernel capture before reboot: `ERROR_INVALID_FUNCTION`
+- live kernel capture after reboot: `PASS`
+- rollup on returned binary stream: `PASS`
 
 Current read:
 
-- the installed package revision is correct, but the active composite-parent driver image has not been refreshed yet
-- `DEVPKEY_Device_IsRebootRequired = True` is the gating condition
-- the next live validation step is post-reboot `ObservationCaptureKernel.exe -> ObservationRollup.exe`
+- the installed package revision and the active composite-parent driver image are now aligned
+- the bounded kernel-side observation path is working on the live lower probe
+- `ObservationCaptureKernel.exe -> ObservationRollup.exe` is now a validated repo-local kernel capture pipeline

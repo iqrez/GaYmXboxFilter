@@ -3160,3 +3160,30 @@ Interpretation:
   - `spinlock-entry-and-irql-raise`
 - `trace-side-and-cleanup-exits` is useful only as contrast context
 - `thunk-terminal-edge` is terminal noise rather than a serious transfer-side study target
+
+## USBXHCI Cross-Family Window Compare
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-cross-family-window-compare.ps1
+```
+
+That pass compares the best controller and transfer windows directly instead of leaving them as separate family rankings.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-cross-family-window-compare.txt`
+- top-ranked cross-family windows:
+  - `0x0001B1F0 timer-lifecycle-and-side-context`
+  - `0x0001B1F0 time-sampling-and-debug-gate`
+  - `0x0003634C wrapper-and-time-anchor`
+  - `0x0003634C delayed-sleep-and-trace-side`
+  - `0x00015D30 transfer-body-and-mdl-turnover`
+
+Interpretation:
+
+- the branch now has a single ranked window-level order across controller and transfer targets
+- controller windows still outrank transfer windows for any future host-side timing study
+- the strongest transfer-side window is now explicitly positioned as the first contrast or fallback window after the controller family

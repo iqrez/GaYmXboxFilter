@@ -96,12 +96,39 @@ Current measurement tool:
 
 - `CadenceProbe.exe` in debug/full tool builds
 
-Current experimental package path:
+Current experimental package paths:
 
 - `scripts\build-usb-child-probe-package.ps1`
 - `GaYmFilter\GaYmUsbChildProbe.inf`
 - `scripts\install-usb-child-probe.ps1`
 - `scripts\uninstall-usb-child-probe.ps1`
+- `scripts\build-parent-composite-probe-package.ps1`
+- `GaYmFilter\GaYmCompositeProbe.inf`
+- `scripts\install-parent-composite-probe.ps1`
+- `scripts\uninstall-parent-composite-probe.ps1`
+
+## Current Result
+
+The USB-child probe is now a completed measurement step.
+
+Observed with the HID-child lower extension removed:
+
+- HID child:
+  - `GaYmXInputFilter -> xinputhid -> HidUsb`
+- USB child:
+  - `HidUsb -> GaYmFilter -> xboxgip`
+
+Measured result:
+
+- upper path remained steady at roughly `240-242 Hz`
+- lower USB-child path exposed a stable semantic packet source
+- lower USB-child path did not expose a comparable periodic cadence signal
+
+Interpretation:
+
+- the USB `02FF` child is useful for semantic observation
+- it is not sufficient, by itself, to prove or control hardware-visible polling cadence
+- the next lower-path candidate is the composite parent `USB\VID_045E&PID_0B12...`
 
 ## Guardrails
 

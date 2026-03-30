@@ -172,3 +172,47 @@ Interpretation:
 - the upper path is clearly being polled continuously by an active consumer path on this machine
 - the current lower HID-child line does not show the same continuous cadence when sampled idle through the lower control plane
 - any future USB-child retarget should be compared against this exact upper/lower baseline rather than treated as an isolated reading
+
+## USB-Child Isolation Result
+
+Follow-up topology after removing the HID-child lower extension:
+
+### HID Child
+
+```text
+GaYmXInputFilter
+xinputhid
+HidUsb
+```
+
+### USB Input Child
+
+```text
+HidUsb
+GaYmFilter
+xboxgip
+```
+
+Measured with:
+
+```text
+CadenceProbe.exe 3 500 upper 0
+CadenceProbe.exe 3 500 lower 0
+```
+
+Observed:
+
+- upper path:
+  - still approximately `120-121` completions per `500 ms`
+  - roughly `240-242 Hz`
+- lower USB-child path:
+  - no periodic `read`, `write`, or `devctl` delta during the 3-second sample window
+  - only a static semantic source remained:
+    - `ioctl=0x00220003`
+    - `len=17`
+
+Interpretation:
+
+- the isolated USB-child attachment removes the old control-plane ambiguity cleanly
+- even in that clean state, the USB-child path does not expose a live cadence signal comparable to the upper path
+- that makes the composite parent the next logical candidate for a true hardware-polling probe

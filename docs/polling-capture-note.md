@@ -3264,3 +3264,28 @@ Interpretation:
 - the branch now has a bounded first experiment target inside 0x0001B1F0
 - the preferred prototype order is timer-centered first, then timestamp-gate second
 - the spec explicitly rules out the long inline-delay pattern that previously destabilized the machine
+
+## USBXHCI 1B1F0 Probe Points
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-probe-points.ps1
+```
+
+That pass turns the `0x0001B1F0` experiment spec into exact first probe candidates.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-probe-points.txt`
+- first live probe order:
+  - `ExSetTimer`
+  - `KeWaitForSingleObject`
+  - `KeQueryUnbiasedInterruptTime`
+
+Interpretation:
+
+- the branch now has exact first-attachment candidates inside the primary controller body
+- timer-arm and wait-correlation points are preferred over direct stall primitives
+- `KeStallExecutionProcessor` is explicitly demoted to a late-stage contrast point

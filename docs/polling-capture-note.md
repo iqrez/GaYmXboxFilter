@@ -1586,3 +1586,56 @@ with immediate follow-on context in:
 - `0x00046530`
 
 and `0x00008140` kept only as the thinner sibling edge.
+
+## USBXHCI Transfer Next-Hop Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-transfer-next-hop-assessment.ps1
+```
+
+That read-only pass compares the two direct next-hop bodies from `0x00008180`:
+
+- `0x00008E74`
+- `0x00046530`
+
+Observed on this machine:
+
+- `0x00008E74`
+  - size:
+    - `17`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x00046530`
+  - size:
+    - `333`
+  - direct internal:
+    - `5`
+  - direct IAT:
+    - `0`
+  - visible direct behavior:
+    - `0x0001A7FC`
+    - `0x00019AC8`
+    - `0x0001AD7C`
+    - `0x00058AC0`
+
+Interpretation:
+
+- the `0x00008180` next-hop split is not balanced
+- `0x00008E74` is effectively a tiny stub
+- `0x00046530` is the only follow-on body with enough structure to justify deeper offline work
+
+So the next clean offline target is now:
+
+- `0x00046530`
+
+with immediate follow-on context in:
+
+- `0x0001A7FC`
+- `0x00019AC8`
+- `0x0001AD7C`
+
+and `0x00008E74` kept only as the tiny sibling stub.

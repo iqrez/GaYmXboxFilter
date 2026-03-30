@@ -1310,3 +1310,50 @@ with immediate follow-on context in:
 - `0x00046530`
 
 and `0x00008140` kept only as the thinner sibling edge.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-transfer-next-hop-assessment.ps1`
+
+Current `0x00008180` next-hop assessment on this machine:
+
+- compared next hops:
+  - `0x00008E74`
+  - `0x00046530`
+- recommended next:
+  - `0x00046530`
+
+Why:
+
+- `0x00008E74`
+  - is effectively a stub:
+    - size `17`
+    - `0` direct internal
+    - `0` direct IAT
+- `0x00046530`
+  - is the only substantive continuation:
+    - size `333`
+    - `5` direct internal
+  - fan-out includes:
+    - `0x0001A7FC`
+    - `0x00019AC8`
+    - `0x0001AD7C`
+    - `0x00058AC0`
+
+Interpretation:
+
+- the `0x00008180` split is not ambiguous
+- `0x00008E74` does not justify deeper follow-up
+- `0x00046530` is the first real continuation beyond the `0x00007D60 -> 0x00008180` path
+
+So the next clean offline target is now:
+
+- `0x00046530`
+
+with immediate follow-on context in:
+
+- `0x0001A7FC`
+- `0x00019AC8`
+- `0x0001AD7C`
+
+and `0x00008E74` kept only as the tiny sibling stub.

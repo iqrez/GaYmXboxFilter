@@ -1711,3 +1711,117 @@ with immediate follow-on context in:
 - `0x00055864`
 
 and `0x0000DA20` / `0x0000DC30` kept as likely control-side hooks.
+
+## USBXHCI Transfer Tail-Band Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-transfer-tail-band-assessment.ps1
+```
+
+That read-only pass compares the `0x0001AD7C` tail-band split:
+
+- thin tails:
+  - `0x0001B0D8`
+  - `0x0001B158`
+- trace siblings:
+  - `0x00055790`
+  - `0x00055864`
+- shared direct targets:
+  - `0x00058AC0`
+  - `0x0000C8C0`
+- adjacent substantive neighbor:
+  - `0x0001B1F0`
+
+Observed on this machine:
+
+- `0x0001B0D8`
+  - size:
+    - `119`
+  - direct internal:
+    - `3`
+  - visible direct behavior:
+    - `0x00058AC0`
+    - `0x0000C8C0`
+- `0x0001B158`
+  - size:
+    - `145`
+  - direct internal:
+    - `2`
+  - visible direct behavior:
+    - `0x00058AC0`
+    - `0x0000C8C0`
+- `0x00055790`
+  - size:
+    - `206`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00055864`
+  - size:
+    - `202`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00058AC0`
+  - size:
+    - `30`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x0000C8C0`
+  - size:
+    - `91`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `EtwWriteTransfer`
+- `0x0001B1F0`
+  - size:
+    - `1257`
+  - direct internal:
+    - `24`
+  - direct IAT:
+    - `11`
+  - visible direct behavior includes:
+    - `0x0000D210`
+    - `0x0001BA28`
+    - `0x0001BA64`
+    - `0x0001BA8C`
+    - `KeQueryUnbiasedInterruptTime`
+    - `KeStallExecutionProcessor`
+    - `ExAllocateTimer`
+    - `ExSetTimer`
+    - `ExDeleteTimer`
+
+Interpretation:
+
+- `0x0001B0D8` and `0x0001B158` are only thin mirrored tails
+- `0x00055790` and `0x00055864` are trace-heavy side-context
+- `0x00058AC0` and `0x0000C8C0` collapse into stub / ETW-side context
+- `0x0001B1F0` is the first neighboring body with enough timing and orchestration structure to justify deeper offline work
+
+So the next clean offline target is now:
+
+- `0x0001B1F0`
+
+with immediate follow-on context in:
+
+- `0x0000D210`
+- `0x0001BA28`
+- `0x0001BA64`
+- `0x0001BA8C`
+
+and `0x00058AC0` / `0x0000C8C0` demoted to stub-and-trace side context.

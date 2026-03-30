@@ -1416,3 +1416,90 @@ with immediate follow-on context in:
 - `0x00055864`
 
 and `0x0000DA20` / `0x0000DC30` kept as the likely control-side hooks.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-transfer-tail-band-assessment.ps1`
+
+Current `0x0001AD7C` tail-band assessment on this machine:
+
+- compared tails:
+  - `0x0001B0D8`
+  - `0x0001B158`
+- compared trace siblings:
+  - `0x00055790`
+  - `0x00055864`
+- compared shared direct targets:
+  - `0x00058AC0`
+  - `0x0000C8C0`
+- compared local substantive neighbor:
+  - `0x0001B1F0`
+- recommended next:
+  - `0x0001B1F0`
+
+Why:
+
+- `0x0001B0D8`
+  - stays a thin non-instrumented tail
+  - only meaningful direct targets:
+    - `0x00058AC0`
+    - `0x0000C8C0`
+- `0x0001B158`
+  - is the same kind of thin tail sibling
+  - same direct targets:
+    - `0x00058AC0`
+    - `0x0000C8C0`
+- `0x00055790`
+  - is trace-heavy side-context
+  - one direct internal handoff to:
+    - `0x00058B00`
+  - one direct import:
+    - `WppAutoLogTrace`
+- `0x00055864`
+  - is the same trace-heavy sibling pattern
+  - one direct internal handoff to:
+    - `0x00058B00`
+  - one direct import:
+    - `WppAutoLogTrace`
+- `0x00058AC0`
+  - collapses into a tiny stub:
+    - size `30`
+    - `0` direct internal
+    - `0` direct IAT
+- `0x0000C8C0`
+  - collapses into ETW-side helper context:
+    - size `91`
+    - `0` direct internal
+    - one direct import:
+      - `EtwWriteTransfer`
+- `0x0001B1F0`
+  - is the first substantive neighboring body:
+    - size `1257`
+    - `24` direct internal
+    - `11` direct IAT
+  - carries timing/orchestration imports:
+    - `KeQueryUnbiasedInterruptTime`
+    - `KeStallExecutionProcessor`
+    - `ExAllocateTimer`
+    - `ExSetTimer`
+    - `ExDeleteTimer`
+    - `KeWaitForSingleObject`
+
+Interpretation:
+
+- the `0x0001AD7C` line does not keep getting more interesting through the direct tail-call pair
+- those tails mostly collapse into stub and ETW-side helpers
+- the only remaining substantive continuation near that band is the adjacent timer/orchestration body at `0x0001B1F0`
+
+So the next clean offline target is now:
+
+- `0x0001B1F0`
+
+with immediate follow-on context in:
+
+- `0x0000D210`
+- `0x0001BA28`
+- `0x0001BA64`
+- `0x0001BA8C`
+
+and `0x00058AC0` / `0x0000C8C0` demoted to stub-and-trace side context.

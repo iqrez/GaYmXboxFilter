@@ -2532,3 +2532,60 @@ Interpretation:
 - the current read-only census is now complete for `USBXHCI.SYS` `10.0.26100.2454`
 - every runtime function in the image has now been entered at least once under the current deep-pass model
 - there is no remaining untested runtime-function target set for this workflow
+
+## USBXHCI Intervention Shortlist
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-intervention-shortlist.ps1
+```
+
+That pass ranks the best plausible host-side timing intervention points from the full `1294/1294` runtime census.
+
+Observed on this machine:
+
+- parsed targets:
+  - `1294`
+- output:
+  - `out\dev\usbxhci-intervention-shortlist.txt`
+
+Current top candidates:
+
+1. `0x0001B1F0`
+   - controller timing/orchestration body
+   - imports:
+     - `KeQueryUnbiasedInterruptTime`
+     - `KeStallExecutionProcessor`
+     - `ExAllocateTimer`
+     - `ExSetTimer`
+     - `ExDeleteTimer`
+     - `KeWaitForSingleObject`
+2. `0x0001144D`
+   - transfer hot-path body
+   - imports:
+     - `KeAcquireSpinLockRaiseToDpc`
+     - `KeReleaseSpinLock`
+3. `0x000038CC`
+   - transfer hot-path body
+   - imports:
+     - `KeAcquireSpinLockRaiseToDpc`
+     - `KeReleaseSpinLock`
+4. `0x00011E20`
+   - transfer hot-path body
+   - imports:
+     - `KeAcquireSpinLockRaiseToDpc`
+     - `KeReleaseSpinLock`
+5. `0x0003634C`
+   - controller timing/orchestration body
+   - imports:
+     - `KeQueryUnbiasedInterruptTime`
+     - `KeDelayExecutionThread`
+     - `KeGetCurrentIrql`
+
+Interpretation:
+
+- the branch now has a ranked intervention set, not just complete coverage
+- the strongest candidates split cleanly into:
+  - controller timing/orchestration bodies
+  - transfer hot-path spinlock bodies

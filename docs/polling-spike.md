@@ -2359,3 +2359,34 @@ Interpretation:
 - `0x0001B1F0` is the real controller timing core on this branch
 - `0x0003FC38` is the only direct descendant that still preserves timing-centric behavior
 - `0x0000D210` is only a bridge into the alternate `D258` path, not a competing timing core
+
+The spike now also includes a focused `0x0003634C` micro-map:
+
+- `scripts\capture-usbxhci-3634c-micromap.ps1`
+
+Current `0x0003634C` micro-map result on this machine:
+
+- output:
+  - `out\dev\usbxhci-3634c-micromap.txt`
+- direct timing surface on `0x0003634C`:
+  - `KeQueryUnbiasedInterruptTime`
+  - `KeDelayExecutionThread`
+  - `KeGetCurrentIrql`
+- shared controller spine:
+  - `0x0000D210`
+  - `0x00019AC8`
+  - `0x0001A724`
+  - `0x0001BA28`
+  - `0x0002E390`
+- exclusive descendants:
+  - `0x0001BA00`
+  - `0x0001A7FC`
+  - `0x0002F834`
+  - `0x000303B4`
+  - `0x00041388`
+
+Interpretation:
+
+- `0x0003634C` is the secondary controller timing body
+- unlike `0x0001B1F0`, it does not produce a meaningful deeper timing child
+- its exclusive descendants demote into wrapper, trace, bridge-to-stub, or interrupt-side context

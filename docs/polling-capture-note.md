@@ -3339,3 +3339,28 @@ Interpretation:
 - the first observation pass now has a concrete event contract instead of an informal logging idea
 - the branch now defines both the per-event schema and the offline rollup buckets
 - arm-to-wake correlation can now be evaluated without inventing the row format later
+
+## USBXHCI 1B1F0 Capture Pipeline
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-capture-pipeline.ps1
+```
+
+That pass defines the end-to-end path from hot probe row to offline rollup.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-capture-pipeline.txt`
+- main artifacts:
+  - `out\dev\usbxhci-1b1f0-events.txt`
+  - `out\dev\usbxhci-1b1f0-correlated.txt`
+  - `out\dev\usbxhci-1b1f0-rollup.txt`
+
+Interpretation:
+
+- the first observation pass now has an end-to-end pipeline from probe event to offline rollup
+- the branch explicitly prefers buffered numeric rows over live formatting on hot paths
+- the prototype is now concrete enough to implement without rethinking capture flow

@@ -99,6 +99,38 @@ static CaptureKernelConfig ParseArgs(int argc, char* argv[])
     return config;
 }
 
+static std::string DescribeControlRouteState(const GAYM_CONTROL_ROUTE_STATE& routeState)
+{
+    char buffer[256] = {};
+    std::snprintf(
+        buffer,
+        sizeof(buffer),
+        "flags=0x%08lX bound=%s in_d0=%s vid=%04X pid=%04X type=%lu build=0x%08lX",
+        routeState.Flags,
+        (routeState.Flags & GAYM_CONTROL_ROUTE_FLAG_BOUND_FILTER_CONTEXT) != 0 ? "yes" : "no",
+        (routeState.Flags & GAYM_CONTROL_ROUTE_FLAG_FILTER_IN_D0) != 0 ? "yes" : "no",
+        routeState.VendorId,
+        routeState.ProductId,
+        routeState.DeviceType,
+        routeState.DriverBuildStamp);
+    return std::string(buffer);
+}
+
+static std::optional<GAYM_CONTROL_ROUTE_STATE> TryQueryRouteState(HANDLE device)
+{
+    GAYM_CONTROL_ROUTE_STATE routeState = {};
+    if (QueryControlRouteState(device, &routeState, nullptr)) {
+        return routeState;
+    }
+
+    const DWORD error = GetLastError();
+    if (error == ERROR_INVALID_FUNCTION || error == ERROR_NOT_SUPPORTED) {
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 static HANDLE OpenLowerControlDevice()
 {
     return CreateFileW(
@@ -177,6 +209,20 @@ int main(int argc, char* argv[])
             throw std::runtime_error("failed to open \\\\.\\GaYmFilterCtl (run elevated and ensure a lower probe is active)");
         }
 
+        const std::optional<GAYM_CONTROL_ROUTE_STATE> routeState = TryQueryRouteState(device);
+        if (routeState.has_value()) {
+            const bool hasBoundFilter =
+                (routeState->Flags & GAYM_CONTROL_ROUTE_FLAG_BOUND_FILTER_CONTEXT) != 0;
+            const bool filterInD0 =
+                (routeState->Flags & GAYM_CONTROL_ROUTE_FLAG_FILTER_IN_D0) != 0;
+            if (!hasBoundFilter || !filterInD0) {
+                CloseHandle(device);
+                throw std::runtime_error(
+                    "control route is not ready for observation capture: " +
+                    DescribeControlRouteState(*routeState));
+            }
+        }
+
         UsbXhciObservationCaptureConfig captureConfig = {};
         captureConfig.SampleCount = config.sampleCount;
         captureConfig.DueTimeMs = config.dueTimeMs;
@@ -192,10 +238,17 @@ int main(int argc, char* argv[])
             static_cast<DWORD>(events.size() * sizeof(events[0])),
             &bytesReturned);
         const DWORD error = success ? ERROR_SUCCESS : GetLastError();
+        const std::optional<GAYM_CONTROL_ROUTE_STATE> routeStateAfterFailure =
+            success ? std::nullopt : TryQueryRouteState(device);
         CloseHandle(device);
 
         if (!success) {
-            throw std::runtime_error("IOCTL_GAYM_CAPTURE_OBSERVATION failed with error " + std::to_string(error));
+            std::string message =
+                "IOCTL_GAYM_CAPTURE_OBSERVATION failed with error " + std::to_string(error);
+            if (routeStateAfterFailure.has_value()) {
+                message += " (" + DescribeControlRouteState(*routeStateAfterFailure) + ")";
+            }
+            throw std::runtime_error(message);
         }
 
         if ((bytesReturned % sizeof(events[0])) != 0) {
@@ -228,6 +281,9 @@ int main(int argc, char* argv[])
         }
 
         std::printf("Lower control path : %ws\n", GaYmSecondaryControlDevicePath());
+        if (routeState.has_value()) {
+            std::printf("Route state       : %s\n", DescribeControlRouteState(*routeState).c_str());
+        }
         std::printf("Wrote binary events: %s\n", config.eventsPath.string().c_str());
         if (config.cadencePath.has_value()) {
             std::printf("Wrote cadence file : %s\n", config.cadencePath->string().c_str());

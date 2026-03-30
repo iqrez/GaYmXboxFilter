@@ -923,6 +923,44 @@ inline bool CaptureObservation(
     return success != FALSE;
 }
 
+inline bool QueryControlRouteState(
+    HANDLE hDevice,
+    GAYM_CONTROL_ROUTE_STATE* routeState,
+    DWORD* bytesReturned = nullptr)
+{
+    DWORD bytes = 0;
+
+    if (routeState == nullptr) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    ZeroMemory(routeState, sizeof(*routeState));
+    const BOOL success = SendIoctlRaw(
+        hDevice,
+        IOCTL_GAYM_QUERY_ROUTE_STATE,
+        NULL,
+        0,
+        routeState,
+        sizeof(*routeState),
+        &bytes);
+
+    if (bytesReturned != nullptr) {
+        *bytesReturned = bytes;
+    }
+
+    if (!success) {
+        return false;
+    }
+
+    if (bytes < sizeof(*routeState) || routeState->Size != sizeof(*routeState)) {
+        SetLastError(ERROR_INVALID_DATA);
+        return false;
+    }
+
+    return true;
+}
+
 inline bool ApplyOutputState(HANDLE hDevice, const GAYM_OUTPUT_STATE* outputState)
 {
     return SendIoctlRaw(

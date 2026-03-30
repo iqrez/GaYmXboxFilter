@@ -2812,6 +2812,11 @@ Interpretation:
 - that keeps the session and rollup contract stable while the future real `USBXHCI` producer is still being designed
 - `HostEmitter` now also supports an `import` backend for externally captured binary event streams
 - that import path keeps the same session manifest, rollup, and comparison flow while allowing future host-side capture to be replayed without changing the harness
+- the lower control path now also exposes a route-state query so the tools can distinguish:
+  - no bound filter context
+  - bound filter not in D0
+  - observation-capable dev build
+- the `0x0001B1F0` harness now preflights live hardware presence for `Kernel` and `HostEmitter Adapter` sources before capture begins
 - session comparison is now scripted through:
   - `scripts\compare-usbxhci-observation-sessions.ps1`
 - current baseline comparison on this machine reports the default `HostEmitter` adapter as `Comparable` to the kernel source for matched sample-count runs

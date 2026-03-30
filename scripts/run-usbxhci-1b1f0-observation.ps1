@@ -31,6 +31,20 @@ function Assert-Administrator {
     }
 }
 
+function Assert-ObservationHardwarePresent {
+    $presentDevices = @(
+        Get-PnpDevice -PresentOnly | Where-Object {
+            $_.InstanceId -like 'USB\VID_045E&PID_0B12*' -or
+            $_.InstanceId -like 'USB\VID_045E&PID_02FF&IG_00*' -or
+            $_.InstanceId -like 'HID\VID_045E&PID_02FF&IG_00*'
+        }
+    )
+
+    if ($presentDevices.Count -eq 0) {
+        throw 'No present Xbox controller path is available for live lower-probe observation. Reconnect the controller before using Kernel or HostEmitter Adapter sources.'
+    }
+}
+
 function Assert-ToolPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -276,6 +290,10 @@ if ($Source -eq 'HostEmitter') {
     if ($HostEmitterBackend -eq 'Import' -and -not $HostEmitterImportEvents) {
         throw 'HostEmitter import backend requires -HostEmitterImportEvents.'
     }
+}
+
+if ($Source -eq 'Kernel' -or ($Source -eq 'HostEmitter' -and $HostEmitterBackend -eq 'Adapter')) {
+    Assert-ObservationHardwarePresent
 }
 
 $sourceInfo = Resolve-ObservationSource `

@@ -71,6 +71,70 @@ static PDEVICE_CONTEXT GaYmAcquireActiveControlFilterContext(
     return filterCtx;
 }
 
+static VOID GaYmBuildControlRouteStateSnapshot(
+    _In_ PCONTROL_DEVICE_CONTEXT ControlContext,
+    _Out_ PGAYM_CONTROL_ROUTE_STATE RouteState)
+{
+    PDEVICE_CONTEXT filterCtx;
+
+    RtlZeroMemory(RouteState, sizeof(*RouteState));
+    RouteState->Size = sizeof(*RouteState);
+    RouteState->DriverBuildStamp = GAYM_FILTER_BUILD_STAMP;
+    RouteState->Flags = GAYM_CONTROL_ROUTE_FLAG_NONE;
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
+    RouteState->Flags |= GAYM_CONTROL_ROUTE_FLAG_DEV_DIAGNOSTICS_ENABLED;
+    RouteState->Flags |= GAYM_CONTROL_ROUTE_FLAG_OBSERVATION_CAPTURE_SUPPORTED;
+#endif
+
+    WdfWaitLockAcquire(ControlContext->RouteLock, NULL);
+    filterCtx = ControlContext->FilterCtx;
+    if (filterCtx != NULL) {
+        RouteState->Flags |= GAYM_CONTROL_ROUTE_FLAG_BOUND_FILTER_CONTEXT;
+        RouteState->VendorId = filterCtx->VendorId;
+        RouteState->ProductId = filterCtx->ProductId;
+        RouteState->DeviceType = (ULONG)filterCtx->DeviceType;
+        if (filterCtx->IsInD0) {
+            RouteState->Flags |= GAYM_CONTROL_ROUTE_FLAG_FILTER_IN_D0;
+        }
+    }
+    WdfWaitLockRelease(ControlContext->RouteLock);
+}
+
+static NTSTATUS GaYmWriteControlRouteStateResponse(
+    _In_ PCONTROL_DEVICE_CONTEXT ControlContext,
+    _In_ WDFREQUEST Request,
+    _Out_ ULONG_PTR* Information)
+{
+    PGAYM_CONTROL_ROUTE_STATE routeState;
+    size_t outLen;
+    NTSTATUS status;
+
+    *Information = 0;
+
+    if (!NT_SUCCESS(GaYmValidateNoInputBuffer(Request))) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    routeState = NULL;
+    outLen = 0;
+    status = WdfRequestRetrieveOutputBuffer(
+        Request,
+        sizeof(GAYM_CONTROL_ROUTE_STATE),
+        (PVOID*)&routeState,
+        &outLen);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    if (outLen < sizeof(GAYM_CONTROL_ROUTE_STATE)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    GaYmBuildControlRouteStateSnapshot(ControlContext, routeState);
+    *Information = sizeof(GAYM_CONTROL_ROUTE_STATE);
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS GaYmGetIoctlBufferLengths(
     _In_ WDFREQUEST Request,
     _Out_ size_t* InputLength,
@@ -1782,15 +1846,21 @@ VOID GaYmEvtCtlIoDeviceControl(
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     PCONTROL_DEVICE_CONTEXT ctlCtx = ControlGetContext(WdfIoQueueGetDevice(Queue));
+    NTSTATUS  status = STATUS_INVALID_DEVICE_REQUEST;
+    ULONG_PTR info   = 0;
+
+    if (IoControlCode == IOCTL_GAYM_QUERY_ROUTE_STATE) {
+        status = GaYmWriteControlRouteStateResponse(ctlCtx, Request, &info);
+        WdfRequestCompleteWithInformation(Request, status, info);
+        return;
+    }
+
     PDEVICE_CONTEXT ctx = GaYmAcquireActiveControlFilterContext(ctlCtx);
 
     if (!ctx) {
         WdfRequestComplete(Request, STATUS_DEVICE_NOT_READY);
         return;
     }
-
-    NTSTATUS  status = STATUS_INVALID_DEVICE_REQUEST;
-    ULONG_PTR info   = 0;
 
     switch (IoControlCode) {
 

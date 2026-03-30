@@ -3480,6 +3480,11 @@ Current read:
 - that gives the spike a stable producer slot before deeper host-side work starts
 - `HostEmitter` now also supports an `import` backend driven by externally captured binary event streams plus optional cadence CSV
 - that import path preserves the existing session manifest and rollup contract instead of creating a second observation workflow
+- the lower control path now also exposes route-state query data for observation tools:
+  - bound filter context
+  - D0 readiness
+  - dev-diagnostics / observation-capture capability
+- `run-usbxhci-1b1f0-observation.ps1` now preflights live Xbox-path presence before attempting `Kernel` or `HostEmitter Adapter` capture
 - `compare-usbxhci-observation-sessions.ps1` now provides a baseline-vs-candidate report for matched runs
 - current `Kernel` vs default `HostEmitter` comparison is `Comparable` on this machine:
   - completed chains preserved

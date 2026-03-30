@@ -297,6 +297,7 @@ Supported commands in maintainer builds:
 - `GaYmCLI rate parent <hz>`
 - `GaYmCLI rate upper <hz>`
 - `GaYmCLI rate off`
+- `GaYmCLI ratecurve [device_index] [sample_ms] [output_csv]`
 
 Observed validation results:
 
@@ -320,6 +321,14 @@ Interpretation:
 - the explicit target-rate layer works better as a user-mode experiment than as another kernel ABI change
 - asking for an upper target is now more practical than guessing a raw interval manually
 - the lower parent counters still do not fully explain the upper-path response, which reinforces that the parent-side pacing effect propagates upstream in a non-trivial way
+
+For machine-readable captures, `ratecurve` emits:
+
+```text
+interval_us,parent_hz,upper_hz
+```
+
+and disables the lower pacing experiment again when the sweep finishes.
 
 ## Guardrails
 

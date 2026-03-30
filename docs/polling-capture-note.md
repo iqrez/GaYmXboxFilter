@@ -370,3 +370,17 @@ Interpretation:
 - the new target-rate layer is useful as a user-mode experiment
 - upper-target tuning is now materially easier than manual interval guessing
 - the gap between nearly flat lower counters and a clearly changed upper cadence confirms that the parent-path pacing effect is real but not fully captured by the lower counter deltas alone
+
+For scripted captures, the current CLI also supports:
+
+```text
+GaYmCLI ratecurve [device_index] [sample_ms] [output_csv]
+```
+
+which emits CSV rows of:
+
+```text
+interval_us,parent_hz,upper_hz
+```
+
+and disables the lower pacing experiment again when the sweep finishes.

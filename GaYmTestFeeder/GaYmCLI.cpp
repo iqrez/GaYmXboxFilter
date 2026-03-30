@@ -230,6 +230,7 @@ static void PrintUsage()
     printf("  GaYmCLI rate parent <hz>           Tune lower pacing toward a parent cadence target\n");
     printf("  GaYmCLI rate upper <hz>            Tune lower pacing toward an upper cadence target\n");
     printf("  GaYmCLI rate off                   Disable lower pacing experiment\n");
+    printf("  GaYmCLI ratecurve [device_index] [sample_ms] [output_csv]\n");
 #endif
     printf("  GaYmCLI test  [device_index]       Inject a test report\n");
     printf("  GaYmCLI report [device_index] <btn0> <btn1> <dpad> <lt> <rt> <lx> <ly> <rx> <ry>\n");
@@ -717,6 +718,10 @@ struct RateCandidateMeasurement {
     double errorHz = 0.0;
 };
 
+static const ULONG kRateSweepCandidatesUs[] = {
+    0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000
+};
+
 static const char* RateExperimentTargetName(RateExperimentTarget target)
 {
     switch (target) {
@@ -833,7 +838,8 @@ static bool EvaluateRateCandidate(
     DWORD settleMs,
     DWORD sampleMs,
     int deviceIndex,
-    RateCandidateMeasurement* measurement)
+    RateCandidateMeasurement* measurement,
+    bool emitHumanLine)
 {
     if (!ApplyLowerPacingIntervalUs(intervalUs)) {
         return false;
@@ -850,11 +856,13 @@ static bool EvaluateRateCandidate(
         (target == RateExperimentTarget::Parent ? measurement->parentHz : measurement->upperHz) -
         desiredRateHz);
 
-    std::printf(
-        "  interval=%4lu us -> parent=%6.1f Hz upper=%6.1f Hz\n",
-        measurement->intervalUs,
-        measurement->parentHz,
-        measurement->upperHz);
+    if (emitHumanLine) {
+        std::printf(
+            "  interval=%4lu us -> parent=%6.1f Hz upper=%6.1f Hz\n",
+            measurement->intervalUs,
+            measurement->parentHz,
+            measurement->upperHz);
+    }
     return true;
 }
 
@@ -862,7 +870,6 @@ static void CmdRate(int argc, char* argv[])
 {
     constexpr DWORD kSettleMs = 200;
     constexpr DWORD kSampleMs = 1500;
-    const ULONG coarseCandidates[] = { 0, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000 };
     RateExperimentTarget target = RateExperimentTarget::Upper;
     long requestedRateHz = 0;
     long deviceIndex = 0;
@@ -924,7 +931,8 @@ static void CmdRate(int argc, char* argv[])
                 kSettleMs,
                 kSampleMs,
                 static_cast<int>(deviceIndex),
-                &measurement)) {
+                &measurement,
+                true)) {
             return false;
         }
 
@@ -935,7 +943,7 @@ static void CmdRate(int argc, char* argv[])
         return true;
     };
 
-    for (ULONG intervalUs : coarseCandidates) {
+    for (ULONG intervalUs : kRateSweepCandidatesUs) {
         if (!evaluateCandidate(intervalUs)) {
             std::fprintf(stderr, "Rate sweep failed during coarse pass (error %lu).\n", GetLastError());
             ApplyLowerPacingIntervalUs(0);
@@ -966,12 +974,114 @@ static void CmdRate(int argc, char* argv[])
         RateExperimentTargetName(target),
         static_cast<double>(requestedRateHz));
 }
+
+static bool WriteRateCurveCsv(
+    const char* path,
+    const std::vector<RateCandidateMeasurement>& measurements)
+{
+    FILE* file = nullptr;
+
+    if (fopen_s(&file, path, "w") != 0 || file == nullptr) {
+        return false;
+    }
+
+    std::fprintf(file, "interval_us,parent_hz,upper_hz\n");
+    for (const RateCandidateMeasurement& measurement : measurements) {
+        std::fprintf(
+            file,
+            "%lu,%.1f,%.1f\n",
+            measurement.intervalUs,
+            measurement.parentHz,
+            measurement.upperHz);
+    }
+
+    std::fclose(file);
+    return true;
+}
+
+static void CmdRateCurve(int argc, char* argv[])
+{
+    constexpr DWORD kSettleMs = 200;
+    long deviceIndex = 0;
+    long sampleMs = 1500;
+    const char* outputPath = nullptr;
+    std::vector<RateCandidateMeasurement> measurements;
+
+    if (argc >= 3 && !ParseLongArgument(argv[2], 0, 64, &deviceIndex)) {
+        std::fprintf(stderr, "Invalid device index: %s\n", argv[2]);
+        return;
+    }
+
+    if (argc >= 4 && !ParseLongArgument(argv[3], 250, 10000, &sampleMs)) {
+        std::fprintf(stderr, "Invalid sample duration: %s\n", argv[3]);
+        return;
+    }
+
+    if (argc >= 5) {
+        outputPath = argv[4];
+    }
+
+    measurements.reserve(sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]));
+
+    std::fprintf(
+        stderr,
+        "Capturing rate curve for upper device index %ld, sample window %ld ms\n",
+        deviceIndex,
+        sampleMs);
+
+    std::printf("interval_us,parent_hz,upper_hz\n");
+
+    for (ULONG intervalUs : kRateSweepCandidatesUs) {
+        RateCandidateMeasurement measurement = {};
+
+        if (!EvaluateRateCandidate(
+                intervalUs,
+                RateExperimentTarget::Upper,
+                0.0,
+                kSettleMs,
+                static_cast<DWORD>(sampleMs),
+                static_cast<int>(deviceIndex),
+                &measurement,
+                false)) {
+            std::fprintf(stderr, "Rate curve capture failed (error %lu).\n", GetLastError());
+            ApplyLowerPacingIntervalUs(0);
+            return;
+        }
+
+        measurements.push_back(measurement);
+        std::printf(
+            "%lu,%.1f,%.1f\n",
+            measurement.intervalUs,
+            measurement.parentHz,
+            measurement.upperHz);
+    }
+
+    if (!ApplyLowerPacingIntervalUs(0)) {
+        std::fprintf(stderr, "Warning: failed to disable lower pacing experiment (error %lu).\n", GetLastError());
+    }
+
+    if (outputPath != nullptr) {
+        if (!WriteRateCurveCsv(outputPath, measurements)) {
+            std::fprintf(stderr, "Failed to write CSV export: %s\n", outputPath);
+            return;
+        }
+
+        std::fprintf(stderr, "CSV written to %s\n", outputPath);
+    }
+}
 #else
 static void CmdRate(int argc, char* argv[])
 {
     UNREFERENCED_PARAMETER(argc);
     UNREFERENCED_PARAMETER(argv);
     std::fprintf(stderr, "The rate command is not available in the release bundle profile.\n");
+}
+
+static void CmdRateCurve(int argc, char* argv[])
+{
+    UNREFERENCED_PARAMETER(argc);
+    UNREFERENCED_PARAMETER(argv);
+    std::fprintf(stderr, "The ratecurve command is not available in the release bundle profile.\n");
 }
 #endif
 
@@ -1491,6 +1601,7 @@ int main(int argc, char* argv[])
     else if (_stricmp(cmd, "off")    == 0) CmdOverride(argc, argv, false);
     else if (_stricmp(cmd, "jitter") == 0) CmdJitter(argc, argv);
     else if (_stricmp(cmd, "rate")   == 0) CmdRate(argc, argv);
+    else if (_stricmp(cmd, "ratecurve") == 0) CmdRateCurve(argc, argv);
     else if (_stricmp(cmd, "test")   == 0) CmdTest(argc, argv);
     else if (_stricmp(cmd, "report") == 0) CmdReport(argc, argv);
     else {

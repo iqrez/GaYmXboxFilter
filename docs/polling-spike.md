@@ -2137,3 +2137,61 @@ Interpretation:
 - `0x0003FC38` is the only exclusive descendant that still looks like real timing-side machinery
 - the next controller-family target should therefore be:
   - `0x0003FC38`
+
+The spike now also includes a `0x0003FC38` branch assessment:
+
+- `scripts\capture-usbxhci-3fc38-branch-assessment.ps1`
+
+Current `0x0003FC38` branch result on this machine:
+
+- output:
+  - `out\dev\usbxhci-3fc38-branch-assessment.txt`
+- reviewed branch nodes:
+  - `0x00012BF0`
+  - `0x0001BA28`
+  - `0x0000BF40`
+  - `0x0000C970`
+  - `0x0000D210`
+  - `0x0003C400`
+  - `0x0003FE84`
+  - `0x0003FF40`
+  - `0x00058B00`
+
+Interpretation:
+
+- `0x0003FC38` remains the leaf timing body in the primary controller family
+- the descendants demote into:
+  - side bodies
+  - flush and completion service legs
+  - wrappers
+  - debug/IRQL legs
+  - a thunk
+
+The spike now also includes a `0x0003634C` exclusive assessment:
+
+- `scripts\capture-usbxhci-3634c-exclusive-assessment.ps1`
+
+Current `0x0003634C` exclusive-branch result on this machine:
+
+- output:
+  - `out\dev\usbxhci-3634c-exclusive-assessment.txt`
+- reviewed exclusive nodes:
+  - `0x0001A7FC`
+  - `0x0001BA00`
+  - `0x0002F834`
+  - `0x000303B4`
+  - `0x00041388`
+  - `0x00056D58`
+
+Interpretation:
+
+- the secondary controller family does not reveal a better deeper timing body either
+- `0x0003634C` should be treated as the leaf timing body for that side
+
+Current controller-family leaf set is now:
+
+- primary:
+  - `0x0001B1F0`
+  - leaf timing descendant `0x0003FC38`
+- secondary:
+  - `0x0003634C`

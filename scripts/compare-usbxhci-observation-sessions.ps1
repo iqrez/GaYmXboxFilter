@@ -120,6 +120,27 @@ function Get-IntMetric {
     return [int64]$Map[$Key]
 }
 
+function Get-StringMetric {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Map,
+        [Parameter(Mandatory = $true)]
+        [string]$Key,
+        [string]$DefaultValue = 'n/a'
+    )
+
+    if (-not $Map.ContainsKey($Key)) {
+        return $DefaultValue
+    }
+
+    $value = [string]$Map[$Key]
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
+    }
+
+    return $value
+}
+
 function New-DiffLine {
     param(
         [Parameter(Mandatory = $true)]
@@ -184,10 +205,12 @@ function Write-ComparisonReport {
         ('CandidateSession={0}' -f $Candidate.Path)
         ''
         '[identity]'
-        ('BaselineSource={0}' -f $Baseline.Header['Source'])
-        ('CandidateSource={0}' -f $Candidate.Header['Source'])
-        ('BaselineCaptureTool={0}' -f $Baseline.Header['CaptureTool'])
-        ('CandidateCaptureTool={0}' -f $Candidate.Header['CaptureTool'])
+        ('BaselineSource={0}' -f (Get-StringMetric -Map $Baseline.Header -Key 'Source'))
+        ('CandidateSource={0}' -f (Get-StringMetric -Map $Candidate.Header -Key 'Source'))
+        ('BaselineSourceBackend={0}' -f (Get-StringMetric -Map $Baseline.Header -Key 'SourceBackend'))
+        ('CandidateSourceBackend={0}' -f (Get-StringMetric -Map $Candidate.Header -Key 'SourceBackend'))
+        ('BaselineCaptureTool={0}' -f (Get-StringMetric -Map $Baseline.Header -Key 'CaptureTool'))
+        ('CandidateCaptureTool={0}' -f (Get-StringMetric -Map $Candidate.Header -Key 'CaptureTool'))
         ''
         '[counts]'
         (New-DiffLine -Name 'completed_chains' -Baseline $baselineCompleted -Candidate $candidateCompleted)

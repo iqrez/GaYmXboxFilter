@@ -9,6 +9,7 @@
 
 #include <charconv>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -22,9 +23,17 @@
 
 namespace {
 
+enum class HostEmitterBackend {
+    Adapter,
+    Import,
+};
+
 struct CaptureHostConfig {
     std::filesystem::path eventsPath;
     std::optional<std::filesystem::path> cadencePath;
+    std::optional<std::filesystem::path> importEventsPath;
+    std::optional<std::filesystem::path> importCadencePath;
+    HostEmitterBackend backend = HostEmitterBackend::Adapter;
     uint32_t sampleCount = 16;
     uint32_t dueTimeMs = 8;
 };
@@ -49,6 +58,32 @@ static bool ParseUnsigned32(const char* text, uint32_t* value)
     return true;
 }
 
+static HostEmitterBackend ParseBackendFromEnvironment()
+{
+    char value[32] = {};
+    const DWORD length = GetEnvironmentVariableA("GAYM_HOST_EMITTER_BACKEND", value, ARRAYSIZE(value));
+    if (length == 0 || length >= ARRAYSIZE(value)) {
+        return HostEmitterBackend::Adapter;
+    }
+
+    if (_stricmp(value, "import") == 0) {
+        return HostEmitterBackend::Import;
+    }
+
+    return HostEmitterBackend::Adapter;
+}
+
+static std::optional<std::filesystem::path> ReadPathFromEnvironment(const char* variableName)
+{
+    char buffer[MAX_PATH * 4] = {};
+    const DWORD length = GetEnvironmentVariableA(variableName, buffer, ARRAYSIZE(buffer));
+    if (length == 0 || length >= ARRAYSIZE(buffer)) {
+        return std::nullopt;
+    }
+
+    return std::filesystem::path(buffer);
+}
+
 static void EnsureParentDirectory(const std::filesystem::path& path)
 {
     const std::filesystem::path parent = path.parent_path();
@@ -61,7 +96,10 @@ static void PrintUsage()
 {
     std::printf(
         "ObservationCaptureUsbXhciHost.exe <events_path> [sample_count] [due_time_ms] [cadence_path]\n");
-    std::printf("  Current spike adapter: emits host-emitter artifacts through the bounded lower composite probe.\n");
+    std::printf("  Backend is selected by environment:\n");
+    std::printf("    GAYM_HOST_EMITTER_BACKEND=adapter|import\n");
+    std::printf("    GAYM_HOST_EMITTER_IMPORT_EVENTS=<path> (for import)\n");
+    std::printf("    GAYM_HOST_EMITTER_IMPORT_CADENCE=<path> (optional for import)\n");
 }
 
 static CaptureHostConfig ParseArgs(int argc, char* argv[])
@@ -73,6 +111,9 @@ static CaptureHostConfig ParseArgs(int argc, char* argv[])
 
     CaptureHostConfig config = {};
     config.eventsPath = argv[1];
+    config.backend = ParseBackendFromEnvironment();
+    config.importEventsPath = ReadPathFromEnvironment("GAYM_HOST_EMITTER_IMPORT_EVENTS");
+    config.importCadencePath = ReadPathFromEnvironment("GAYM_HOST_EMITTER_IMPORT_CADENCE");
 
     if (argc >= 3 && !ParseUnsigned32(argv[2], &config.sampleCount)) {
         throw std::runtime_error("invalid sample_count");
@@ -94,6 +135,10 @@ static CaptureHostConfig ParseArgs(int argc, char* argv[])
     if ((static_cast<uint64_t>(config.sampleCount) * static_cast<uint64_t>(config.dueTimeMs)) >
         GAYM_OBSERVATION_CAPTURE_MAX_TOTAL_DURATION_MS) {
         throw std::runtime_error("requested capture exceeds the bounded session budget");
+    }
+
+    if (config.backend == HostEmitterBackend::Import && !config.importEventsPath.has_value()) {
+        throw std::runtime_error("import backend requires GAYM_HOST_EMITTER_IMPORT_EVENTS");
     }
 
     return config;
@@ -143,6 +188,35 @@ static std::vector<CadenceWindowRow> BuildCadenceWindows(
     return windows;
 }
 
+static std::vector<UsbXhciProbeEventRecord> ReadObservationEvents(
+    const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    if (!input.is_open()) {
+        throw std::runtime_error("failed to open import events: " + path.string());
+    }
+
+    const std::streamsize length = input.tellg();
+    if (length < 0 || (length % static_cast<std::streamsize>(sizeof(UsbXhciProbeEventRecord))) != 0) {
+        throw std::runtime_error("import events file is not aligned to the observation record size");
+    }
+
+    input.seekg(0, std::ios::beg);
+
+    std::vector<UsbXhciProbeEventRecord> events(
+        static_cast<size_t>(length / static_cast<std::streamsize>(sizeof(UsbXhciProbeEventRecord))));
+    if (!events.empty()) {
+        input.read(
+            reinterpret_cast<char*>(events.data()),
+            static_cast<std::streamsize>(events.size() * sizeof(events[0])));
+        if (!input) {
+            throw std::runtime_error("failed while reading import events: " + path.string());
+        }
+    }
+
+    return events;
+}
+
 static void WriteCadenceWindows(
     const std::filesystem::path& path,
     const std::vector<CadenceWindowRow>& windows)
@@ -164,6 +238,28 @@ static void WriteCadenceWindows(
     }
 }
 
+static void CopyTextArtifact(
+    const std::filesystem::path& sourcePath,
+    const std::filesystem::path& destinationPath)
+{
+    EnsureParentDirectory(destinationPath);
+    std::filesystem::copy_file(
+        sourcePath,
+        destinationPath,
+        std::filesystem::copy_options::overwrite_existing);
+}
+
+static const char* BackendName(HostEmitterBackend backend)
+{
+    switch (backend) {
+    case HostEmitterBackend::Import:
+        return "import";
+    case HostEmitterBackend::Adapter:
+    default:
+        return "adapter";
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -171,38 +267,42 @@ int main(int argc, char* argv[])
     try {
         const CaptureHostConfig config = ParseArgs(argc, argv);
         EnsureParentDirectory(config.eventsPath);
+        std::vector<UsbXhciProbeEventRecord> events;
 
-        HANDLE device = OpenLowerControlDevice();
-        if (device == INVALID_HANDLE_VALUE) {
-            throw std::runtime_error("failed to open \\\\.\\GaYmFilterCtl (run elevated and ensure the composite probe is active)");
+        if (config.backend == HostEmitterBackend::Import) {
+            events = ReadObservationEvents(*config.importEventsPath);
+        } else {
+            HANDLE device = OpenLowerControlDevice();
+            if (device == INVALID_HANDLE_VALUE) {
+                throw std::runtime_error("failed to open \\\\.\\GaYmFilterCtl (run elevated and ensure the composite probe is active)");
+            }
+
+            UsbXhciObservationCaptureConfig captureConfig = {};
+            captureConfig.SampleCount = config.sampleCount;
+            captureConfig.DueTimeMs = config.dueTimeMs;
+
+            events.resize(static_cast<size_t>(config.sampleCount) * GAYM_OBSERVATION_CAPTURE_EVENTS_PER_SAMPLE);
+
+            DWORD bytesReturned = 0;
+            const bool success = CaptureObservation(
+                device,
+                &captureConfig,
+                reinterpret_cast<PGAYM_OBSERVATION_EVENT_RECORD>(events.data()),
+                static_cast<DWORD>(events.size() * sizeof(events[0])),
+                &bytesReturned);
+            const DWORD error = success ? ERROR_SUCCESS : GetLastError();
+            CloseHandle(device);
+
+            if (!success) {
+                throw std::runtime_error("host-emitter adapter capture failed with error " + std::to_string(error));
+            }
+
+            if ((bytesReturned % sizeof(events[0])) != 0) {
+                throw std::runtime_error("driver returned a partial observation record stream");
+            }
+
+            events.resize(bytesReturned / sizeof(events[0]));
         }
-
-        UsbXhciObservationCaptureConfig captureConfig = {};
-        captureConfig.SampleCount = config.sampleCount;
-        captureConfig.DueTimeMs = config.dueTimeMs;
-
-        std::vector<UsbXhciProbeEventRecord> events(
-            static_cast<size_t>(config.sampleCount) * GAYM_OBSERVATION_CAPTURE_EVENTS_PER_SAMPLE);
-        DWORD bytesReturned = 0;
-
-        const bool success = CaptureObservation(
-            device,
-            &captureConfig,
-            reinterpret_cast<PGAYM_OBSERVATION_EVENT_RECORD>(events.data()),
-            static_cast<DWORD>(events.size() * sizeof(events[0])),
-            &bytesReturned);
-        const DWORD error = success ? ERROR_SUCCESS : GetLastError();
-        CloseHandle(device);
-
-        if (!success) {
-            throw std::runtime_error("host-emitter adapter capture failed with error " + std::to_string(error));
-        }
-
-        if ((bytesReturned % sizeof(events[0])) != 0) {
-            throw std::runtime_error("driver returned a partial observation record stream");
-        }
-
-        events.resize(bytesReturned / sizeof(events[0]));
 
         std::ofstream output(config.eventsPath, std::ios::binary);
         if (!output.is_open()) {
@@ -222,13 +322,26 @@ int main(int argc, char* argv[])
         QueryPerformanceFrequency(&qpcFrequency);
 
         if (config.cadencePath.has_value()) {
-            WriteCadenceWindows(
-                *config.cadencePath,
-                BuildCadenceWindows(events, static_cast<uint64_t>(qpcFrequency.QuadPart)));
+            if (config.backend == HostEmitterBackend::Import &&
+                config.importCadencePath.has_value() &&
+                std::filesystem::exists(*config.importCadencePath)) {
+                CopyTextArtifact(*config.importCadencePath, *config.cadencePath);
+            } else {
+                WriteCadenceWindows(
+                    *config.cadencePath,
+                    BuildCadenceWindows(events, static_cast<uint64_t>(qpcFrequency.QuadPart)));
+            }
         }
 
-        std::printf("Host emitter mode : adapter\n");
-        std::printf("Lower control path: %ws\n", GaYmSecondaryControlDevicePath());
+        std::printf("Host emitter mode : %s\n", BackendName(config.backend));
+        if (config.backend == HostEmitterBackend::Import) {
+            std::printf("Import events path: %s\n", config.importEventsPath->string().c_str());
+            if (config.importCadencePath.has_value()) {
+                std::printf("Import cadence path: %s\n", config.importCadencePath->string().c_str());
+            }
+        } else {
+            std::printf("Lower control path: %ws\n", GaYmSecondaryControlDevicePath());
+        }
         std::printf("Wrote binary events: %s\n", config.eventsPath.string().c_str());
         if (config.cadencePath.has_value()) {
             std::printf("Wrote cadence file : %s\n", config.cadencePath->string().c_str());

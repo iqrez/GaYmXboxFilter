@@ -9,7 +9,11 @@ param(
     [ValidateRange(1, 250)]
     [int]$DueTimeMs = 8,
     [string]$OutputPrefix,
-    [string]$CaptureToolPath
+    [string]$CaptureToolPath,
+    [ValidateSet('Adapter', 'Import')]
+    [string]$HostEmitterBackend = 'Adapter',
+    [string]$HostEmitterImportEvents,
+    [string]$HostEmitterImportCadence
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +48,8 @@ function Resolve-ObservationSource {
         [string]$SourceName,
         [Parameter(Mandatory = $true)]
         [pscustomobject]$ResolvedLayout,
-        [string]$ExplicitToolPath
+        [string]$ExplicitToolPath,
+        [string]$HostBackendName
     )
 
     switch ($SourceName) {
@@ -73,7 +78,8 @@ function Resolve-ObservationSource {
                 return [pscustomobject]@{
                     Name          = 'HostEmitter'
                     Role          = 'FutureUsbXhciEmitter'
-                    RequiresAdmin = $true
+                    Backend       = $HostBackendName
+                    RequiresAdmin = ($HostBackendName -eq 'Adapter')
                     ToolPath      = $ExplicitToolPath
                     Resolution    = 'ExplicitToolPath'
                 }
@@ -82,7 +88,8 @@ function Resolve-ObservationSource {
             return [pscustomobject]@{
                 Name          = 'HostEmitter'
                 Role          = 'FutureUsbXhciEmitter'
-                RequiresAdmin = $true
+                Backend       = $HostBackendName
+                RequiresAdmin = ($HostBackendName -eq 'Adapter')
                 ToolPath      = Get-GaYmToolPath -Layout $ResolvedLayout -Name 'ObservationCaptureUsbXhciHost.exe'
                 Resolution    = 'DefaultFutureTool'
             }
@@ -90,6 +97,18 @@ function Resolve-ObservationSource {
     }
 
     throw "Unsupported source: $SourceName"
+}
+
+function Assert-OptionalPathExists {
+    param(
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if ($Path -and -not (Test-Path $Path)) {
+        throw "$Label not found: $Path"
+    }
 }
 
 function Invoke-RequiredCommand {
@@ -140,6 +159,10 @@ function Write-ObservationSessionSummary {
     )
 
     $rollupText = Get-Content -Path $RollupPath -Raw
+    $sourceBackend = 'n/a'
+    if ($null -ne $SourceInfo.PSObject.Properties['Backend'] -and $SourceInfo.Backend) {
+        $sourceBackend = $SourceInfo.Backend
+    }
 
     $lines = @(
         '# USBXHCI 1B1F0 Observation Session'
@@ -151,6 +174,7 @@ function Write-ObservationSessionSummary {
         ('Source={0}' -f $SourceInfo.Name)
         ('SourceRole={0}' -f $SourceInfo.Role)
         ('SourceResolution={0}' -f $SourceInfo.Resolution)
+        ('SourceBackend={0}' -f $sourceBackend)
         ('CaptureTool={0}' -f $SourceInfo.ToolPath)
         'TransportContract=GAYM_OBSERVATION_EVENT_RECORD'
         ('RequestedSampleCount={0}' -f $RequestedSampleCount)
@@ -173,11 +197,92 @@ function Write-ObservationSessionSummary {
     $lines -join [Environment]::NewLine | Set-Content -Path $Path -Encoding ASCII
 }
 
+function Invoke-ObservationCapture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$SourceInfo,
+        [Parameter(Mandatory = $true)]
+        [string]$CaptureTool,
+        [Parameter(Mandatory = $true)]
+        [string]$EventsPath,
+        [Parameter(Mandatory = $true)]
+        [int]$RequestedSampleCount,
+        [Parameter(Mandatory = $true)]
+        [int]$RequestedDueTimeMs,
+        [Parameter(Mandatory = $true)]
+        [string]$CadencePath,
+        [string]$ImportEventsPath,
+        [string]$ImportCadencePath
+    )
+
+    $previousBackend = $null
+    $previousImportEvents = $null
+    $previousImportCadence = $null
+
+    if ($SourceInfo.Name -eq 'HostEmitter') {
+        $previousBackend = $env:GAYM_HOST_EMITTER_BACKEND
+        $previousImportEvents = $env:GAYM_HOST_EMITTER_IMPORT_EVENTS
+        $previousImportCadence = $env:GAYM_HOST_EMITTER_IMPORT_CADENCE
+
+        $env:GAYM_HOST_EMITTER_BACKEND = $SourceInfo.Backend.ToLowerInvariant()
+        if ($ImportEventsPath) {
+            $env:GAYM_HOST_EMITTER_IMPORT_EVENTS = $ImportEventsPath
+        } else {
+            Remove-Item Env:GAYM_HOST_EMITTER_IMPORT_EVENTS -ErrorAction SilentlyContinue
+        }
+
+        if ($ImportCadencePath) {
+            $env:GAYM_HOST_EMITTER_IMPORT_CADENCE = $ImportCadencePath
+        } else {
+            Remove-Item Env:GAYM_HOST_EMITTER_IMPORT_CADENCE -ErrorAction SilentlyContinue
+        }
+    }
+
+    try {
+        & $CaptureTool $EventsPath $RequestedSampleCount $RequestedDueTimeMs $CadencePath
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Capture failed.'
+        }
+    } finally {
+        if ($SourceInfo.Name -eq 'HostEmitter') {
+            if ($null -ne $previousBackend) {
+                $env:GAYM_HOST_EMITTER_BACKEND = $previousBackend
+            } else {
+                Remove-Item Env:GAYM_HOST_EMITTER_BACKEND -ErrorAction SilentlyContinue
+            }
+
+            if ($null -ne $previousImportEvents) {
+                $env:GAYM_HOST_EMITTER_IMPORT_EVENTS = $previousImportEvents
+            } else {
+                Remove-Item Env:GAYM_HOST_EMITTER_IMPORT_EVENTS -ErrorAction SilentlyContinue
+            }
+
+            if ($null -ne $previousImportCadence) {
+                $env:GAYM_HOST_EMITTER_IMPORT_CADENCE = $previousImportCadence
+            } else {
+                Remove-Item Env:GAYM_HOST_EMITTER_IMPORT_CADENCE -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 if (-not $OutputPrefix) {
     $OutputPrefix = 'usbxhci-1b1f0-observation'
 }
 
-$sourceInfo = Resolve-ObservationSource -SourceName $Source -ResolvedLayout $layout -ExplicitToolPath $CaptureToolPath
+if ($Source -eq 'HostEmitter') {
+    Assert-OptionalPathExists -Path $HostEmitterImportEvents -Label 'HostEmitter import events'
+    Assert-OptionalPathExists -Path $HostEmitterImportCadence -Label 'HostEmitter import cadence'
+    if ($HostEmitterBackend -eq 'Import' -and -not $HostEmitterImportEvents) {
+        throw 'HostEmitter import backend requires -HostEmitterImportEvents.'
+    }
+}
+
+$sourceInfo = Resolve-ObservationSource `
+    -SourceName $Source `
+    -ResolvedLayout $layout `
+    -ExplicitToolPath $CaptureToolPath `
+    -HostBackendName $HostEmitterBackend
 
 if ($sourceInfo.RequiresAdmin) {
     Assert-Administrator
@@ -197,7 +302,15 @@ $diagnosticsPath = New-ObservationArtifactPath -LeafName ("{0}-{1}-diagnostics.t
 $sessionPath = New-ObservationArtifactPath -LeafName ("{0}-{1}-session.txt" -f $OutputPrefix.ToLowerInvariant(), $Source.ToLowerInvariant())
 
 Invoke-RequiredCommand -Label 'Capture' -Action {
-    & $captureTool $eventsPath $SampleCount $DueTimeMs $cadencePath
+    Invoke-ObservationCapture `
+        -SourceInfo $sourceInfo `
+        -CaptureTool $captureTool `
+        -EventsPath $eventsPath `
+        -RequestedSampleCount $SampleCount `
+        -RequestedDueTimeMs $DueTimeMs `
+        -CadencePath $cadencePath `
+        -ImportEventsPath $HostEmitterImportEvents `
+        -ImportCadencePath $HostEmitterImportCadence
 }
 
 Invoke-RequiredCommand -Label 'Rollup' -Action {

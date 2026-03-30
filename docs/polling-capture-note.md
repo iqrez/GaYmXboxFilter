@@ -1922,3 +1922,102 @@ with immediate follow-on context in:
 - `0x00058BC0`
 
 and `0x0001BAC0` kept as the secondary local branch.
+
+## USBXHCI Next Five Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-next-five-assessment.ps1
+```
+
+That read-only pass freezes the current five-target queue:
+
+- primary line:
+  - `0x0000D258`
+  - `0x0000D59C`
+- secondary line:
+  - `0x0001BAC0`
+  - `0x0001BF58`
+- opaque side candidate:
+  - `0x00058BC0`
+
+Observed on this machine:
+
+- `0x0000D258`
+  - size:
+    - `664`
+  - direct internal:
+    - `5`
+  - direct IAT:
+    - `2`
+  - visible direct behavior includes:
+    - `0x0001A7FC`
+    - `0x0001AD7C`
+    - `0x00058AC0`
+    - `0x00058BC0`
+    - `ExAllocatePool2`
+    - `ExFreePoolWithTag`
+- `0x0000D59C`
+  - size:
+    - `621`
+  - direct internal:
+    - `7`
+  - direct IAT:
+    - `1`
+  - visible direct behavior includes:
+    - `0x0001BF58`
+    - `0x0000D210`
+    - `0x0001A7FC`
+    - `0x00056D8C`
+    - `KeStallExecutionProcessor`
+- `0x0001BAC0`
+  - size:
+    - `363`
+  - direct internal:
+    - `6`
+  - direct IAT:
+    - `0`
+  - visible direct behavior includes:
+    - `0x0001BF58`
+    - `0x0001BC34`
+    - `0x0001F9A4`
+    - `0x00005BC0`
+    - `0x00006A08`
+- `0x0001BF58`
+  - size:
+    - `294`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00058BC0`
+  - size:
+    - `682`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+
+Interpretation:
+
+- `0x0000D59C` is now the strongest unresolved target in the primary line
+- `0x0001BAC0` remains the real secondary branch body
+- `0x0001BF58` demotes to trace-heavy follow-on context
+- `0x00058BC0` stays opaque and should not outrank the bodies with clearer call structure
+
+So the next clean offline target is now:
+
+- `0x0000D59C`
+
+with immediate follow-on context in:
+
+- `0x0001BF58`
+- `0x0000D210`
+- `0x0001A7FC`
+- `0x00056D8C`
+
+and `0x0001BAC0` kept as the secondary branch body.

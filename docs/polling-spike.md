@@ -1586,3 +1586,82 @@ with immediate follow-on context in:
 - `0x00058BC0`
 
 and `0x0001BAC0` kept as the secondary local branch.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-next-five-assessment.ps1`
+
+Current five-target assessment on this machine:
+
+- primary line:
+  - `0x0000D258`
+  - `0x0000D59C`
+- secondary line:
+  - `0x0001BAC0`
+  - `0x0001BF58`
+- opaque side candidate:
+  - `0x00058BC0`
+- recommended next:
+  - `0x0000D59C`
+- secondary track:
+  - `0x0001BAC0`
+
+Why:
+
+- `0x0000D258`
+  - remains the primary body that was worth following
+  - but the next richer unresolved step behind it is now:
+    - `0x0000D59C`
+- `0x0000D59C`
+  - is the strongest unresolved continuation in this set:
+    - size `621`
+    - `7` direct internal
+    - `1` direct IAT
+  - keeps timing-sensitive context:
+    - `KeStallExecutionProcessor`
+  - fan-out includes:
+    - `0x0001BF58`
+    - `0x0000D210`
+    - `0x0001A7FC`
+    - `0x00056D8C`
+- `0x0001BAC0`
+  - remains the best alternate branch body:
+    - size `363`
+    - `6` direct internal
+    - `0` direct IAT
+  - fan-out includes:
+    - `0x0001BF58`
+    - `0x0001BC34`
+    - `0x0001F9A4`
+    - `0x00005BC0`
+    - `0x00006A08`
+- `0x0001BF58`
+  - demotes to trace-heavy follow-on:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x00058BC0`
+  - stays opaque:
+    - size `682`
+    - `0` direct internal
+    - `0` direct IAT
+  - so it is not the best next deep target even though it is large
+
+Interpretation:
+
+- the primary line through `0x0000D258` is still the right place to push deeper
+- the immediate next best target is `0x0000D59C`
+- `0x0001BAC0` should stay alive as the secondary branch
+- `0x0001BF58` and `0x00058BC0` should both be deprioritized for now
+
+So the next clean offline target is now:
+
+- `0x0000D59C`
+
+with immediate follow-on context in:
+
+- `0x0001BF58`
+- `0x0000D210`
+- `0x0001A7FC`
+- `0x00056D8C`
+
+and `0x0001BAC0` kept as the secondary branch body.

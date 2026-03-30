@@ -3214,3 +3214,28 @@ Interpretation:
 - the branch is now partitioned by timing modality as well as by target rank
 - controller timer and pacing windows remain the strongest starting points
 - transfer-side windows are now framed explicitly as MDL, lock, and IRQL contrast targets rather than competing controller timing cores
+
+## USBXHCI Window Intervention Plan
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-window-intervention-plan.ps1
+```
+
+That pass turns the ranked windows into an experiment-ready order with explicit safety bars.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-window-intervention-plan.txt`
+- first experiment-ready windows:
+  - `0x0001B1F0 timer-lifecycle-and-side-context`
+  - `0x0001B1F0 time-sampling-and-debug-gate`
+  - `0x0003634C wrapper-and-time-anchor`
+
+Interpretation:
+
+- the branch now includes a concrete host-side experiment order, not just structure maps
+- the controller side remains the right first experiment family
+- the earlier watchdog result is now an explicit guardrail against repeating unsafe inline-delay designs

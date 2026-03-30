@@ -1344,3 +1344,64 @@ with immediate follow-on context in:
 - `0x0000757C`
 
 and `0x00040D38` kept only as likely control/assert context.
+
+## USBXHCI Hot Body Branch Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-hot-body-branch-assessment.ps1
+```
+
+That read-only pass compares the three outward branches from the hot body at `0x00006BA0`:
+
+- `0x00006E74`
+- `0x0000757C`
+- `0x00040D38`
+
+Observed on this machine:
+
+- `0x00006E74`
+  - role:
+    - endpoint-side hot continuation
+  - direct internal:
+    - `0x00008454`
+    - `0x00054F74`
+  - direct imports:
+    - none
+- `0x0000757C`
+  - role:
+    - quiet transfer bridge
+  - direct internal:
+    - none
+  - direct imports:
+    - none
+  - immediate neighbors:
+    - `0x000076A0-0x000077F4`
+    - `0x000077FC-0x00007B61`
+- `0x00040D38`
+  - role:
+    - control/assert branch
+  - direct internal:
+    - `0x0001A7FC`
+    - `0x00058B00`
+  - direct imports:
+    - `KeBugCheckEx`
+    - `KeGetCurrentProcessorNumberEx`
+
+Interpretation:
+
+- `0x00006E74` remains the only outward branch that still carries explicit hot-path structure
+- `0x0000757C` does not itself expose direct fan-out, but it still matters as a compact bridge into the nearby transfer-event neighborhood
+- `0x00040D38` stays firmly in the control/assert bucket
+
+So the next clean offline target is now:
+
+- `0x00006E74`
+
+with immediate follow-on context in:
+
+- `0x00008454`
+- `0x00054F74`
+
+and `0x0000757C` kept only as a transfer-side bridge marker.

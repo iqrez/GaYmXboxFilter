@@ -1099,3 +1099,53 @@ with immediate follow-on context in:
 - `0x0000757C`
 
 and `0x00040D38` kept only as the likely control/assert side branch.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-hot-body-branch-assessment.ps1`
+
+Current hot-body branch assessment on this machine:
+
+- assessed branches:
+  - `0x00006E74`
+  - `0x0000757C`
+  - `0x00040D38`
+- recommended next:
+  - `0x00006E74`
+
+Role split:
+
+- `0x00006E74`
+  - endpoint-side hot continuation
+  - keeps real internal fan-out into:
+    - `0x00008454`
+    - `0x00054F74`
+- `0x0000757C`
+  - quiet transfer bridge
+  - no direct internal or IAT edges in this pass
+  - but its immediate neighbors advance into:
+    - `0x000076A0`
+    - `0x000077FC-0x00007B61`
+- `0x00040D38`
+  - control/assert branch
+  - imports:
+    - `KeBugCheckEx`
+    - `KeGetCurrentProcessorNumberEx`
+
+Interpretation:
+
+- the outward branches from `0x00006BA0` are no longer ambiguous
+- `0x00006E74` is still the only branch with substantive hot-path structure
+- `0x0000757C` is worth keeping only as a transfer-side bridge marker
+- `0x00040D38` remains demoted to control/assert context
+
+So the next clean offline target is now:
+
+- `0x00006E74`
+
+with immediate follow-on context in:
+
+- `0x00008454`
+- `0x00054F74`
+
+and `0x0000757C` kept only as a bridge marker into the nearby transfer-event region.

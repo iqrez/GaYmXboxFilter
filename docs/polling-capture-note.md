@@ -1,0 +1,141 @@
+# Polling Capture Note
+
+## Snapshot Date
+
+2026-03-29
+
+## Goal
+
+Record the exact active stack layers on the wired Xbox controller path before building any lower-path polling probe.
+
+This note is for the experimental `codex/polling-spike` branch only.
+
+## Live Device Paths
+
+### Parent Composite
+
+Instance ID:
+
+```text
+USB\VID_045E&PID_0B12\3032574B30313133323336323435
+```
+
+Active stack:
+
+```text
+xboxgip
+dc1-controller
+USBPcap
+ACPI
+USBHUB3
+```
+
+Interpretation:
+
+- This is the composite parent for the controller family.
+- If true hardware-visible polling control exists below the HID child, this parent path is one of the main candidates.
+
+### USB Input Child
+
+Instance ID:
+
+```text
+USB\VID_045E&PID_02FF&IG_00\00&00&0000CC7A3683ED7E
+```
+
+Active stack:
+
+```text
+HidUsb
+xboxgip
+```
+
+Interpretation:
+
+- This is the USB-side game-input child below the HID child.
+- This path is a plausible candidate for lower timing observation because it sits below `xinputhid`.
+- It is still above the raw hub/host-controller layer, so it may or may not own endpoint timing.
+
+### HID Child
+
+Instance ID:
+
+```text
+HID\VID_045E&PID_02FF&IG_00\7&15036beb&d&0000
+```
+
+Active stack:
+
+```text
+GaYmXInputFilter
+xinputhid
+GaYmFilter
+HidUsb
+```
+
+Interpretation:
+
+- This is the supported production stack.
+- It is already proven to support:
+  - XInput override
+  - native-path override
+  - feeder cadence control
+- It does not currently expose HID-class poll-frequency control on this machine.
+
+## Timing Layers To Separate
+
+The next probe work must distinguish these three layers cleanly.
+
+### 1. USB Endpoint Polling Interval
+
+Questions:
+
+- Is the controller using an interrupt endpoint with a hardware-visible polling interval that can be changed?
+- If yes, where in the parent/composite or USB child path is that interval represented or enforced?
+
+Expected ownership:
+
+- likely below the HID child
+- possibly parent/composite or lower USB stack
+
+### 2. HID-Class Poll Frequency
+
+Questions:
+
+- Does the active HID stack expose `IOCTL_HID_GET_POLL_FREQUENCY_MSEC` or `IOCTL_HID_SET_POLL_FREQUENCY_MSEC`?
+
+Current result:
+
+- the supported stack rejects HID poll-frequency control on this machine
+- so this is not currently the working path for real polling control
+
+### 3. Override Injection Cadence
+
+Questions:
+
+- At what cadence does the feeder inject semantic reports into the supported hybrid stack?
+
+Current result:
+
+- this is already controllable and working through:
+  - `GaYmFeeder.exe --poll-rate-hz`
+  - `GaYmFeeder.exe --poll-interval-ms`
+
+This is not hardware polling, but it is the currently supported timing knob.
+
+## Working Hypothesis
+
+If real `hidusbf`-style polling control is possible for this controller path, it is more likely to be found on:
+
+1. the parent composite `0B12` path
+2. or the USB `02FF` input child
+
+It is unlikely to be owned by the current HID-child hybrid stack, because that stack already rejects the HID poll-frequency ioctl and sits above the more hardware-adjacent timing layers.
+
+## Next Probe Target
+
+The next probe should be minimal and should answer only one question:
+
+- can observed request cadence or completion cadence be changed from the parent/composite or USB-child side?
+
+That probe should prefer measurement over modification first.

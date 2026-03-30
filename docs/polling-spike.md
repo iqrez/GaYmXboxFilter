@@ -81,11 +81,16 @@ That last point is why this spike exists at all.
 
 If the spike is successful, produce:
 
+- one capture note for the live parent/USB/HID stack
 - one short design note explaining the actual timing owner on this hardware path
 - one minimal prototype or capture probe
 - one conclusion:
   - viable next step for real polling control
   - or explicit closure that the supported product should stay with feeder cadence only
+
+Current capture note:
+
+- [polling-capture-note.md](./polling-capture-note.md)
 
 ## Guardrails
 

@@ -945,3 +945,49 @@ So the next clean offline targets are now:
 - `0x000085E0-0x000087BB`
 
 with `0x00058B00` kept only as a routing marker.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-endpoint-neighbor-compare.ps1`
+
+Current endpoint-neighbor comparison on this machine:
+
+- compared bodies:
+  - `0x00008250-0x0000844D`
+  - `0x000085E0-0x000087BB`
+- both are similarly sized
+- both have:
+  - `8` direct internal calls
+  - `0` direct IAT calls
+
+Shared direct internal targets:
+
+- `0x000049B4`
+- `0x00005BC0`
+- `0x00006A08`
+- `0x00006A44`
+- `0x0001F9A4`
+
+Unique split:
+
+- `0x00008250` only:
+  - `0x0001BF58`
+  - `0x000331C8`
+- `0x000085E0` only:
+  - `0x000087C4`
+  - `0x0002BED0`
+
+Interpretation:
+
+- the two neighboring endpoint bodies are both substantive
+- they are not separate isolated side paths
+- they converge into a shared helper set, which is now more interesting than treating either endpoint body alone as the next reverse-engineering target
+- two of those shared targets also line up with earlier hot/helper context:
+  - `0x000049B4`
+  - `0x00006A44`
+
+So the next clean offline targets are now the shared helper tier, starting with:
+
+- `0x0001F9A4`
+- `0x00006A44`
+- `0x000049B4`

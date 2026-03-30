@@ -1157,3 +1157,58 @@ Overall interpretation:
 - but instead the neighboring endpoint bodies around `0x00008454`:
   - `0x00008250-0x0000844D`
   - `0x000085E0-0x000087BB`
+
+## USBXHCI Endpoint Neighbor Comparison
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-endpoint-neighbor-compare.ps1
+```
+
+That read-only pass compares the two neighboring endpoint bodies around `0x00008454`:
+
+- `0x00008250-0x0000844D`
+- `0x000085E0-0x000087BB`
+
+Observed on this machine:
+
+- both bodies are similar in size:
+  - `509`
+  - `475`
+- both expose:
+  - `8` direct internal targets
+  - `0` direct IAT edges
+
+Shared direct internal targets:
+
+- `0x000049B4`
+- `0x00005BC0`
+- `0x00006A08`
+- `0x00006A44`
+- `0x0001F9A4`
+
+Unique split:
+
+- `0x00008250` only:
+  - `0x0001BF58`
+  - `0x000331C8`
+- `0x000085E0` only:
+  - `0x000087C4`
+  - `0x0002BED0`
+
+Interpretation:
+
+- the endpoint neighborhood around `0x00008454` is not a thin wrapper chain
+- the two neighboring endpoint bodies are both substantial and structurally similar
+- the more important result is that they converge into the same shared helper set
+- that shared set is now a better next offline target than studying either endpoint body in isolation
+
+Most useful next targets from this comparison:
+
+- `0x0001F9A4`
+  - highest aggregate shared inbound count in this pass
+- `0x00006A44`
+  - sits immediately adjacent to the earlier hot helper band around `0x00006BA0`
+- `0x000049B4`
+  - already appeared in the earlier transfer/helper convergence work

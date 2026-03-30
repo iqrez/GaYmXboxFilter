@@ -3314,3 +3314,28 @@ Interpretation:
 - the first host-side prototype is now defined as observation-first, not control-first
 - the branch now has a concrete first logging and correlation design for the primary controller window
 - broader bias or pacing experiments should wait until this correlation pass proves the signal is usable
+
+## USBXHCI 1B1F0 Log Schema
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-log-schema.ps1
+```
+
+That pass fixes the event row format and rollup buckets for the first observation run.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-log-schema.txt`
+- critical row fields:
+  - `timer_id`
+  - `matched_arm_sequence`
+  - `context_tag`
+
+Interpretation:
+
+- the first observation pass now has a concrete event contract instead of an informal logging idea
+- the branch now defines both the per-event schema and the offline rollup buckets
+- arm-to-wake correlation can now be evaluated without inventing the row format later

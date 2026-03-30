@@ -1087,3 +1087,73 @@ Overall interpretation:
   - `0x00008454`
 
 with `0x00054F74` kept only as secondary seam context.
+
+## USBXHCI Endpoint-Target Deep Pass
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-endpoint-target-deep.ps1
+```
+
+That read-only pass narrows one layer further by:
+
+- taking the stronger single-target continuation:
+  - `0x00008454`
+- following only its direct handoff target:
+  - `0x00058B00`
+
+Observed on this machine:
+
+- primary function:
+  - `0x00008454-0x000085D3`
+- direct internal targets:
+  - `0x00058B00`
+- direct imports:
+  - `WppAutoLogTrace`
+
+Primary neighborhood:
+
+- `0x00008180-0x00008244`
+- `0x00008250-0x0000844D`
+- `0x00008454-0x000085D3`
+- `0x000085E0-0x000087BB`
+- `0x000087C4-0x00008870`
+
+Interpretation of `0x00008454`:
+
+- it remains centered in an endpoint-heavy local band
+- the two nearest named endpoint candidates are still:
+  - `Reset Endpoint`
+  - `Stop Endpoint`
+- so the function still reads like endpoint-adjacent machinery, not like a detached logging island
+
+Follow target `0x00058B00`:
+
+- resolved function:
+  - `0x00058B00-0x00058B06`
+- section:
+  - `.text`
+- size:
+  - `6`
+- direct internal calls:
+  - none
+- direct IAT calls:
+  - none
+- nearest known candidates:
+  - all far away relative to the endpoint neighborhood around `0x00008454`
+
+Interpretation of `0x00058B00`:
+
+- this still looks like a tiny shared routing thunk
+- it does not look like the substantive endpoint or transfer body to prioritize next
+
+Overall interpretation:
+
+- the `0x00008454` branch stays in endpoint-adjacent territory
+- the direct handoff into `0x00058B00` does not open a richer hot-path body
+- so the next clean offline targets are not:
+  - `0x00058B00`
+- but instead the neighboring endpoint bodies around `0x00008454`:
+  - `0x00008250-0x0000844D`
+  - `0x000085E0-0x000087BB`

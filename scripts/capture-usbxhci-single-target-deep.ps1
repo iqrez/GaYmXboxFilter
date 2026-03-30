@@ -833,9 +833,9 @@ foreach ($followRva in $FollowTargetRvas) {
 }
 
 Add-Section -Lines $lines -Title 'Notes' -Body @(
-    'This pass is read-only and single-target. It centers on 0x00006E74 and its two direct follow-on targets from the previous branch-split assessment.',
+    ('This pass is read-only and single-target. It centers on 0x{0:X8} and the configured direct follow-on targets for this invocation.' -f $TargetRva),
     'Known machinery is judged two ways: exact containment within current cluster-profile candidates, and looser membership in current feature-map function bands.',
-    'The output is intended to answer whether the 0x00006E74 branch drifts back into endpoint/transfer machinery or leaves that neighborhood.'
+    ('The output is intended to answer whether 0x{0:X8} stays in transfer/endpoint-adjacent machinery or drifts into wrapper, debug, or control-side code.' -f $TargetRva)
 )
 
 Set-Content -Path $resolvedOutputPath -Value $lines -Encoding ASCII

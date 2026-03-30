@@ -906,3 +906,42 @@ Interpretation:
   - `0x00008454`
 
 with `0x00054F74` kept only as boundary context.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-endpoint-target-deep.ps1`
+
+Current endpoint-target result on this machine:
+
+- primary target:
+  - `0x00008454`
+- direct handoff target:
+  - `0x00058B00`
+
+What that deeper pass shows:
+
+- `0x00008454`
+  - still sits inside a tight endpoint neighborhood:
+    - `0x00008250-0x0000844D`
+    - `0x000085E0-0x000087BB`
+  - has only:
+    - one direct internal call to `0x00058B00`
+    - one direct `WppAutoLogTrace` import
+- `0x00058B00`
+  - is a `6`-byte `.text` function
+  - has no direct internal calls
+  - has no direct IAT calls
+  - sits far away from the current transfer/endpoint candidate cluster set
+
+Interpretation:
+
+- `0x00008454` still looks endpoint-adjacent, not like an isolated pure tracing stub
+- but the visible direct handoff from it is only a tiny shared thunk at `0x00058B00`
+- that makes `0x00058B00` less interesting as a next study target than the neighboring endpoint bodies around `0x00008454`
+
+So the next clean offline targets are now:
+
+- `0x00008250-0x0000844D`
+- `0x000085E0-0x000087BB`
+
+with `0x00058B00` kept only as a routing marker.

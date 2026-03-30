@@ -2110,3 +2110,30 @@ Interpretation:
 - the controller-family intervention order should stay:
   - `0x0001B1F0`
   - `0x0003634C`
+
+The spike now also includes a `0x0001B1F0` exclusive-branch assessment:
+
+- `scripts\capture-usbxhci-1b1f0-exclusive-assessment.ps1`
+
+Current `0x0001B1F0` exclusive-branch result on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-exclusive-assessment.txt`
+- exclusive direct callees reviewed:
+  - `0x0000BE64`
+  - `0x0000BF40`
+  - `0x0000C970`
+  - `0x0001BA64`
+  - `0x0001BA8C`
+  - `0x0003FC38`
+  - `0x00058B00`
+
+Interpretation:
+
+- the unique `0x0001B1F0` branch mostly collapses to:
+  - wrapper ladders
+  - debug/IRQL side legs
+  - a thunk
+- `0x0003FC38` is the only exclusive descendant that still looks like real timing-side machinery
+- the next controller-family target should therefore be:
+  - `0x0003FC38`

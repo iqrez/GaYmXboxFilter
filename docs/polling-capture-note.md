@@ -2624,3 +2624,36 @@ Interpretation:
 - that means the best controller-family intervention points are still the parent bodies themselves:
   - `0x0001B1F0`
   - `0x0003634C`
+
+## USBXHCI 1B1F0 Exclusive Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-exclusive-assessment.ps1
+```
+
+That pass resolves the direct callees unique to the primary controller body.
+
+Observed on this machine:
+
+- reviewed exclusive direct callees:
+  - `0x0000BE64`
+  - `0x0000BF40`
+  - `0x0000C970`
+  - `0x0001BA64`
+  - `0x0001BA8C`
+  - `0x0003FC38`
+  - `0x00058B00`
+- output:
+  - `out\dev\usbxhci-1b1f0-exclusive-assessment.txt`
+
+Interpretation:
+
+- the unique `0x0001B1F0` branch mostly collapses to:
+  - wrapper ladders
+  - debug/IRQL side legs
+  - a thunk
+- `0x0003FC38` is the only exclusive descendant that still looks like real timing-side machinery
+- the next controller-family target should therefore be:
+  - `0x0003FC38`

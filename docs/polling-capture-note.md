@@ -3473,3 +3473,4 @@ Current read:
 - the installed package revision and the active composite-parent driver image are now aligned
 - the bounded kernel-side observation path is working on the live lower probe
 - `ObservationCaptureKernel.exe -> ObservationRollup.exe` is now a validated repo-local kernel capture pipeline
+- `run-usbxhci-1b1f0-observation.ps1` now wraps that pipeline into a single target-scoped session for the `0x0001B1F0` controller timing body

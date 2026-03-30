@@ -2784,6 +2784,7 @@ Interpretation:
 The spike now also includes a bounded kernel-side observation capture path on the lower control object:
 
 - `GaYmTestFeeder\ObservationCaptureKernel.cpp`
+- `scripts\run-usbxhci-1b1f0-observation.ps1`
 - `ioctl.h`
 - `GaYmFilter\device.c`
 
@@ -2800,3 +2801,4 @@ Interpretation:
 - the kernel-side emitter is implemented and packaged
 - tools and driver builds are green on the new shared 64-byte event record ABI
 - the bounded lower-filter capture path is now validated end-to-end on the live composite parent probe
+- the new `run-usbxhci-1b1f0-observation.ps1` harness now binds that capture path to the first actual `0x0001B1F0` observation target and produces a single session manifest plus rollup artifacts

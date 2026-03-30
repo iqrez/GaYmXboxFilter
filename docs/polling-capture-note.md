@@ -3239,3 +3239,28 @@ Interpretation:
 - the branch now includes a concrete host-side experiment order, not just structure maps
 - the controller side remains the right first experiment family
 - the earlier watchdog result is now an explicit guardrail against repeating unsafe inline-delay designs
+
+## USBXHCI 1B1F0 Experiment Spec
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-1b1f0-experiment-spec.ps1
+```
+
+That pass narrows the first host-side experiment to one bounded window inside the primary controller body.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-1b1f0-experiment-spec.txt`
+- first preferred window:
+  - `timer-lifecycle-and-side-context`
+- second preferred window:
+  - `time-sampling-and-debug-gate`
+
+Interpretation:
+
+- the branch now has a bounded first experiment target inside 0x0001B1F0
+- the preferred prototype order is timer-centered first, then timestamp-gate second
+- the spec explicitly rules out the long inline-delay pattern that previously destabilized the machine

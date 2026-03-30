@@ -32,6 +32,17 @@ function Get-UsbChildInstance {
         Select-Object -First 1
 }
 
+function Test-DeviceRebootRequired {
+    param([string]$InstanceId)
+
+    try {
+        $property = Get-PnpDeviceProperty -InstanceId $InstanceId -KeyName 'DEVPKEY_Device_IsRebootRequired'
+        return $property.Data -eq $true
+    } catch {
+        return $false
+    }
+}
+
 Assert-Administrator
 
 $packageRoot = Get-ProbeStageRoot -ConfigurationName $Configuration
@@ -50,10 +61,17 @@ Write-Host "Installing USB-child probe package: $probeInf"
 $output = & pnputil /add-driver $probeInf /install
 $output | ForEach-Object { Write-Host $_ }
 
-if ($LASTEXITCODE -ne 0) {
+if ($LASTEXITCODE -ne 0 -and
+    ($output -join "`n") -notmatch 'System reboot is needed' -and
+    ($output -join "`n") -notmatch 'Already exists in the system' -and
+    ($output -join "`n") -notmatch 'up-to-date on device') {
     throw 'pnputil failed while installing the USB-child probe package.'
 }
 
 Write-Host ''
 Write-Host "USB child instance: $($usbChild.InstanceId)"
 & pnputil /enum-devices /instanceid $usbChild.InstanceId /stack /drivers
+
+if (Test-DeviceRebootRequired -InstanceId $usbChild.InstanceId) {
+    Write-Warning 'The USB-child probe package is staged, but the device is still in a reboot-required state. Reboot before evaluating cadence changes.'
+}

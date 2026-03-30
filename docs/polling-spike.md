@@ -2752,14 +2752,17 @@ Interpretation:
 
 The spike now also includes a first user-mode observation parser:
 
+- `GaYmTestFeeder\ObservationCaptureStub.cpp`
 - `GaYmTestFeeder\ObservationRollup.cpp`
 - `GaYmTestFeeder\ObservationTypes.h`
 
 Current implementation state on this machine:
 
 - build output:
+  - `ObservationCaptureStub.exe`
   - `ObservationRollup.exe`
 - inputs:
+  - stub-generated binary `UsbXhciProbeEventRecord` stream
   - text event rows file
   - binary `UsbXhciProbeEventRecord` stream
   - optional cadence window file
@@ -2770,6 +2773,6 @@ Current implementation state on this machine:
 
 Interpretation:
 
-- the first observation pass now has an actual parser and rollup tool, not just design notes
+- the first observation pass now has both a bounded local producer and a parser/rollup tool
 - the tool now consumes both text rows and the fixed-size binary event record from the current spike design
-- implementation work can now move toward the live capture side instead of adding more offline planning
+- the full stub-to-parser path can now be exercised without touching the live host stack

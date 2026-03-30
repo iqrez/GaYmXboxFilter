@@ -795,3 +795,58 @@ Interpretation:
   - `0x00011240`
   - `0x00022E7C`
   - and the shared thunk endpoint `0x00058B00` only as a routing landmark
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-branch-split.ps1`
+
+Current branch-split result on this machine:
+
+- assessed second-hop targets:
+  - `0x00006E74`
+  - `0x00011240`
+  - `0x00022E7C`
+
+Resulting split:
+
+- `0x00006E74`
+  - classification:
+    - `likely hot-path continuation`
+  - basis:
+    - stays in nonpageable `.text`
+    - no direct IAT edges in this pass
+    - internal targets stay inside `.text`:
+      - `0x00008454`
+      - `0x00054F74`
+- `0x00011240`
+  - classification:
+    - `instrumented wrapper`
+  - basis:
+    - one direct internal edge back into `0x00058B00`
+    - one direct import:
+      - `WppAutoLogTrace`
+- `0x00022E7C`
+  - classification:
+    - `control/assert drift`
+  - basis:
+    - reaches controller candidate:
+      - `Controller:0x0000DC30`
+    - imports:
+      - `KeGetCurrentIrql`
+      - `VslDeleteSecureSection`
+
+Interpretation:
+
+- the branch split is now specific enough to prioritize deeper study
+- `0x00006E74` is the only one of the three that still looks like a credible continuation of a hot transfer-side path
+- `0x00011240` is likely useful for instrumentation context, but not the main timing lever
+- `0x00022E7C` now looks clearly off the main timing path and into control/security/assert territory
+
+So the next clean offline target is no longer a set of three.
+It is primarily:
+
+- `0x00006E74`
+
+with secondary context only from:
+
+- `0x00011240`

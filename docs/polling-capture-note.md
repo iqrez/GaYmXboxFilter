@@ -931,3 +931,65 @@ Interpretation:
   - `0x00011240`
   - `0x00022E7C`
 - with `0x00058B00` kept only as a shared routing landmark
+
+## USBXHCI Branch Split Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-branch-split.ps1
+```
+
+That read-only pass consumes:
+
+- the current helper micro-map
+- the current cluster profile
+
+and classifies the three second-hop targets as hot-path continuation, wrapper, or control/assert drift.
+
+Observed on this machine:
+
+- assessed targets:
+  - `0x00006E74`
+  - `0x00011240`
+  - `0x00022E7C`
+
+Result:
+
+- `0x00006E74`
+  - classified as:
+    - `likely hot-path continuation`
+  - because:
+    - it stays in nonpageable `.text`
+    - it has no direct IAT edges in this pass
+    - its internal targets stay in `.text`:
+      - `0x00008454`
+      - `0x00054F74`
+- `0x00011240`
+  - classified as:
+    - `instrumented wrapper`
+  - because:
+    - it collapses back into:
+      - `0x00058B00`
+    - and carries:
+      - `WppAutoLogTrace`
+- `0x00022E7C`
+  - classified as:
+    - `control/assert drift`
+  - because:
+    - it directly reaches controller candidate:
+      - `0x0000DC30`
+    - and imports:
+      - `KeGetCurrentIrql`
+      - `VslDeleteSecureSection`
+
+Interpretation:
+
+- the candidate set is now materially reduced
+- `0x00006E74` is the only branch that still looks like a credible continuation of a timing-relevant transfer-side path
+- `0x00011240` is useful context for tracing/instrumentation behavior, but not the main timing lever
+- `0x00022E7C` is now clearly off the main path and into control/security/assert territory
+
+So if the read-only spike continues, the next primary offline target should be:
+
+- `0x00006E74`

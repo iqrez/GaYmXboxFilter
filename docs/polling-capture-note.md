@@ -3422,6 +3422,7 @@ The spike now also includes:
 
 ```text
 GaYmTestFeeder\ObservationRollup.cpp
+GaYmTestFeeder\ObservationTypes.h
 ```
 
 That tool implements the first user-mode parser and rollup path for the planned observation capture.
@@ -3431,7 +3432,8 @@ Observed on this machine:
 - build output:
   - `ObservationRollup.exe`
 - inputs:
-  - event rows file
+  - text event rows file
+  - binary `UsbXhciProbeEventRecord` stream
   - optional cadence window file
 - outputs:
   - correlated chain file
@@ -3441,5 +3443,5 @@ Observed on this machine:
 Interpretation:
 
 - the first observation pass now has an actual parser and rollup tool, not just design notes
-- the tool consumes the fixed-field event rows from the current spike design
+- the tool now consumes both text rows and the fixed-size binary event record from the current spike design
 - implementation work can now move toward the live capture side instead of adding more offline planning

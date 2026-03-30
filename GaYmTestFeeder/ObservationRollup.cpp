@@ -26,6 +26,8 @@
 #include <utility>
 #include <vector>
 
+#include "ObservationTypes.h"
+
 namespace {
 
 enum class ProbePoint : uint16_t {
@@ -102,6 +104,7 @@ struct ParseIssue {
 struct ParseSummary {
     std::vector<ProbeRow> rows;
     std::vector<ParseIssue> issues;
+    bool binaryInput = false;
 };
 
 struct LatencyStats {
@@ -338,6 +341,21 @@ static bool ParseProbePoint(const std::string& text, ProbePoint* probePoint)
     return false;
 }
 
+static bool ParseProbePointValue(uint16_t value, ProbePoint* probePoint)
+{
+    switch (static_cast<ProbePoint>(value)) {
+    case ProbePoint::ExSetTimer:
+    case ProbePoint::KeWaitForSingleObjectEnter:
+    case ProbePoint::KeWaitForSingleObjectExit:
+    case ProbePoint::KeQueryUnbiasedInterruptTime:
+        *probePoint = static_cast<ProbePoint>(value);
+        return true;
+    case ProbePoint::Unknown:
+    default:
+        return false;
+    }
+}
+
 static bool ParseNoteFlags(const std::string& text, uint16_t* flags)
 {
     uint16_t parsedFlags = 0;
@@ -506,7 +524,7 @@ static bool ParseEventRow(
     return true;
 }
 
-static ParseSummary LoadEventRows(const std::filesystem::path& path)
+static ParseSummary LoadTextEventRows(const std::filesystem::path& path)
 {
     ParseSummary summary = {};
     std::ifstream input(path);
@@ -544,6 +562,108 @@ static ParseSummary LoadEventRows(const std::filesystem::path& path)
         });
 
     return summary;
+}
+
+static bool LooksLikeBinaryEventStream(const std::filesystem::path& path)
+{
+    std::error_code error;
+    const uintmax_t fileSize = std::filesystem::file_size(path, error);
+    if (error || fileSize == 0 ||
+        (fileSize % sizeof(UsbXhciProbeEventRecord)) != 0) {
+        return false;
+    }
+
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open()) {
+        return false;
+    }
+
+    UsbXhciProbeEventRecord record = {};
+    input.read(reinterpret_cast<char*>(&record), sizeof(record));
+    if (!input || input.gcount() != static_cast<std::streamsize>(sizeof(record))) {
+        return false;
+    }
+
+    ProbePoint probePoint = ProbePoint::Unknown;
+    return ParseProbePointValue(record.ProbePoint, &probePoint);
+}
+
+static ParseSummary LoadBinaryEventRows(const std::filesystem::path& path)
+{
+    ParseSummary summary = {};
+    summary.binaryInput = true;
+
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open()) {
+        throw std::runtime_error("Failed to open binary events file: " + path.string());
+    }
+
+    size_t recordIndex = 0;
+    while (true) {
+        UsbXhciProbeEventRecord record = {};
+        input.read(reinterpret_cast<char*>(&record), sizeof(record));
+        if (!input) {
+            if (input.eof() && input.gcount() == 0) {
+                break;
+            }
+
+            ParseIssue issue = {};
+            issue.lineNumber = recordIndex + 1;
+            issue.message = "truncated binary record";
+            summary.issues.push_back(issue);
+            break;
+        }
+
+        ProbePoint probePoint = ProbePoint::Unknown;
+        if (!ParseProbePointValue(record.ProbePoint, &probePoint)) {
+            ParseIssue issue = {};
+            issue.lineNumber = recordIndex + 1;
+            issue.message = "invalid binary probe point";
+            summary.issues.push_back(issue);
+            ++recordIndex;
+            continue;
+        }
+
+        ProbeRow row = {};
+        row.lineNumber = recordIndex + 1;
+        row.sequence = record.Sequence;
+        row.probePoint = probePoint;
+        row.timestamp = record.TimestampQpcLike;
+        row.dueTime = record.DueTime;
+        row.timerId = record.TimerId;
+        row.matchedArmSequenceHint = record.MatchedArmSequenceHint;
+        row.contextTag = record.ContextTag;
+        row.threadTag = record.ThreadTag;
+        row.noteFlags = record.NoteFlags;
+        row.irql = record.Irql;
+        row.cpu = record.Cpu;
+        row.period = record.Period;
+        row.waitStatus = record.WaitStatus;
+        row.rawLine = "<binary-record>";
+        summary.rows.push_back(row);
+        ++recordIndex;
+    }
+
+    std::sort(
+        summary.rows.begin(),
+        summary.rows.end(),
+        [](const ProbeRow& left, const ProbeRow& right) {
+            if (left.sequence != right.sequence) {
+                return left.sequence < right.sequence;
+            }
+            return left.lineNumber < right.lineNumber;
+        });
+
+    return summary;
+}
+
+static ParseSummary LoadEventRows(const std::filesystem::path& path)
+{
+    if (LooksLikeBinaryEventStream(path)) {
+        return LoadBinaryEventRows(path);
+    }
+
+    return LoadTextEventRows(path);
 }
 
 static std::vector<CadenceWindow> LoadCadenceWindows(const std::filesystem::path& path)
@@ -1136,6 +1256,7 @@ static void PrintUsage()
 {
     std::printf(
         "ObservationRollup.exe <events_path> [correlated_path] [rollup_path] [diagnostics_path] [cadence_path]\n");
+    std::printf("  events_path may be a text row file or a binary UsbXhciProbeEventRecord stream.\n");
 }
 
 static ToolConfig ParseArgs(int argc, char* argv[])
@@ -1187,6 +1308,7 @@ int main(int argc, char* argv[])
         WriteRollup(config.rollupPath, rollup);
         WriteDiagnostics(config.diagnosticsPath, parseSummary, chains);
 
+        std::printf("Input format     : %s\n", parseSummary.binaryInput ? "binary" : "text");
         std::printf("Parsed rows      : %zu\n", parseSummary.rows.size());
         std::printf("Malformed rows   : %zu\n", parseSummary.issues.size());
         std::printf("Completed chains : %zu\n", rollup.completedChains);

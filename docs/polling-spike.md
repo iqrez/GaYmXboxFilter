@@ -363,3 +363,66 @@ Interpretation:
 - Keep the stable product line untouched.
 - Do not merge experimental attach-path changes into the supported branch without separate validation.
 - Prefer measurement and proof over large speculative rewrites.
+
+## Safe Cap Result
+
+The next follow-up was to harden the parent probe after an unsafe run triggered a watchdog bugcheck during an aggressive `rate-stable` sweep.
+
+Safety changes:
+
+- parent probe pacing cap reduced from `5000 us` to `2500 us`
+- non-passive completion-path stall capped to `100 us`
+- `rate-stable` search narrowed to the conservative `0-2500 us` set
+
+Observed result from a guarded live pass:
+
+- `GaYmCLI rate-stable 100 2 0 500`
+  - best interval: `2500 us`
+  - parent mean: `252.0 Hz`
+  - upper mean: `257.0 Hz`
+  - upper range: `256.0-258.0 Hz`
+
+Interpretation:
+
+- the hardened version no longer reproduced the watchdog crash in the guarded test
+- but it also no longer produced useful upper-rate control
+- that strongly suggests the earlier effect depended on a level of inline completion delay that is not acceptable on the parent hot path
+
+Current best read:
+
+- inline parent-path delay shaping is a useful causality probe
+- it is not yet a credible production or even semi-safe experimental rate-control mechanism
+- the next serious research direction should move closer to the host-controller scheduling layer instead of pushing further on the current completion-delay design
+
+## Host-Stack Direction
+
+Independent review of the public `hidusbf` package points to a different architecture from the current spike:
+
+- a per-device lower filter is used for targeting and deployment
+- the real overclocking effect is tied to patching or altering the USB host stack path
+  - `USBPORT.SYS`
+  - `USBXHCI.SYS`
+  - `IUSB3XHC.SYS`
+
+That means the closest analogue to `hidusbf` is not "delay parent completions more carefully." It is:
+
+- identify the active host-controller path for this machine
+- fingerprint the exact controller, hub, and driver versions involved
+- decide whether a host-stack patch or equivalent interception layer is even technically plausible on this target
+
+To support that next step, the spike now includes:
+
+- `scripts\capture-host-polling-context.ps1`
+
+which captures:
+
+- the current composite parent / USB child / HID child stack state
+- the parent ancestry chain
+- service image paths for the parent chain
+- host-driver version information for key USB and controller binaries
+
+First capture on this machine identified the live host path as:
+
+- `dc1-controller -> USBHUB3 -> USBXHCI -> pci -> ACPI`
+
+So the next host-stack research target on this box is the `USBXHCI` path, not `USBPORT.SYS`.

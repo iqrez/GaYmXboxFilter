@@ -229,6 +229,7 @@ static void PrintUsage()
     printf("  GaYmCLI jitter off                 Disable jitter (dev builds only)\n");
     printf("  GaYmCLI rate parent <hz>           Tune lower pacing toward a parent cadence target\n");
     printf("  GaYmCLI rate upper <hz>            Tune lower pacing toward an upper cadence target\n");
+    printf("  GaYmCLI rate-stable <upper_hz> [runs] [device_index] [sample_ms]\n");
     printf("  GaYmCLI rate off                   Disable lower pacing experiment\n");
     printf("  GaYmCLI ratecurve [device_index] [sample_ms] [output_csv]\n");
     printf("  GaYmCLI ratecurve-stats [runs] [device_index] [sample_ms] [output_csv]\n");
@@ -724,14 +725,31 @@ struct RateCurveAggregateMeasurement {
     ULONG sampleCount = 0;
     double parentSumHz = 0.0;
     double upperSumHz = 0.0;
+    double upperAbsoluteErrorSumHz = 0.0;
     double parentMinHz = std::numeric_limits<double>::max();
     double parentMaxHz = std::numeric_limits<double>::lowest();
     double upperMinHz = std::numeric_limits<double>::max();
     double upperMaxHz = std::numeric_limits<double>::lowest();
 };
 
+struct StableRateResult {
+    ULONG intervalUs = 0;
+    ULONG sampleCount = 0;
+    double parentMeanHz = 0.0;
+    double upperMeanHz = 0.0;
+    double parentMinHz = 0.0;
+    double parentMaxHz = 0.0;
+    double upperMinHz = 0.0;
+    double upperMaxHz = 0.0;
+    double meanAbsoluteUpperErrorHz = 0.0;
+};
+
 static const ULONG kRateSweepCandidatesUs[] = {
     0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000
+};
+
+static const ULONG kRateSweepSafeStableCandidatesUs[] = {
+    0, 500, 1000, 1500, 2000, 2500
 };
 
 static const char* RateExperimentTargetName(RateExperimentTarget target)
@@ -1048,16 +1066,51 @@ static bool WriteRateCurveStatsCsv(
     return true;
 }
 
+static double ComputeAggregateMeanHz(double sumHz, ULONG sampleCount)
+{
+    return sampleCount != 0
+        ? sumHz / static_cast<double>(sampleCount)
+        : 0.0;
+}
+
+static double ComputeAggregateMeanAbsoluteErrorHz(const RateCurveAggregateMeasurement& measurement)
+{
+    return measurement.sampleCount != 0
+        ? measurement.upperAbsoluteErrorSumHz / static_cast<double>(measurement.sampleCount)
+        : 0.0;
+}
+
+static double ComputeAggregateRangeHz(double minHz, double maxHz, ULONG sampleCount)
+{
+    return sampleCount != 0 ? (maxHz - minHz) : 0.0;
+}
+
+static void InitializeRateCurveAggregate(
+    std::vector<RateCurveAggregateMeasurement>* aggregate)
+{
+    aggregate->clear();
+    aggregate->reserve(sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]));
+    for (ULONG intervalUs : kRateSweepCandidatesUs) {
+        RateCurveAggregateMeasurement measurement = {};
+        measurement.intervalUs = intervalUs;
+        aggregate->push_back(measurement);
+    }
+}
+
 static bool CaptureRateCurveMeasurements(
     DWORD settleMs,
     DWORD sampleMs,
     int deviceIndex,
     std::vector<RateCandidateMeasurement>* measurements)
 {
-    measurements->clear();
-    measurements->reserve(sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]));
+    const ULONG* candidates = kRateSweepCandidatesUs;
+    const size_t candidateCount = sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]);
 
-    for (ULONG intervalUs : kRateSweepCandidatesUs) {
+    measurements->clear();
+    measurements->reserve(candidateCount);
+
+    for (size_t candidateIndex = 0; candidateIndex < candidateCount; ++candidateIndex) {
+        const ULONG intervalUs = candidates[candidateIndex];
         RateCandidateMeasurement measurement = {};
 
         if (!EvaluateRateCandidate(
@@ -1073,6 +1126,126 @@ static bool CaptureRateCurveMeasurements(
         }
 
         measurements->push_back(measurement);
+    }
+
+    return true;
+}
+
+static bool CaptureSafeStableMeasurements(
+    DWORD settleMs,
+    DWORD sampleMs,
+    int deviceIndex,
+    std::vector<RateCandidateMeasurement>* measurements)
+{
+    measurements->clear();
+    measurements->reserve(sizeof(kRateSweepSafeStableCandidatesUs) / sizeof(kRateSweepSafeStableCandidatesUs[0]));
+
+    for (ULONG intervalUs : kRateSweepSafeStableCandidatesUs) {
+        RateCandidateMeasurement measurement = {};
+
+        if (!EvaluateRateCandidate(
+                intervalUs,
+                RateExperimentTarget::Upper,
+                0.0,
+                settleMs,
+                sampleMs,
+                deviceIndex,
+                &measurement,
+                false)) {
+            return false;
+        }
+
+        measurements->push_back(measurement);
+    }
+
+    return true;
+}
+
+static bool CaptureRateCurveAggregate(
+    DWORD settleMs,
+    DWORD sampleMs,
+    int deviceIndex,
+    ULONG runCount,
+    const double* requestedUpperRateHz,
+    std::vector<RateCurveAggregateMeasurement>* aggregate)
+{
+    std::vector<RateCandidateMeasurement> measurements;
+
+    InitializeRateCurveAggregate(aggregate);
+
+    for (ULONG runIndex = 0; runIndex < runCount; ++runIndex) {
+        std::fprintf(stderr, "  run %lu/%lu\n", runIndex + 1, runCount);
+
+        if (!CaptureRateCurveMeasurements(
+                settleMs,
+                sampleMs,
+                deviceIndex,
+                &measurements)) {
+            return false;
+        }
+
+        for (size_t index = 0; index < measurements.size(); ++index) {
+            const RateCandidateMeasurement& measurement = measurements[index];
+            RateCurveAggregateMeasurement& entry = (*aggregate)[index];
+            entry.sampleCount += 1;
+            entry.parentSumHz += measurement.parentHz;
+            entry.upperSumHz += measurement.upperHz;
+            if (requestedUpperRateHz != nullptr) {
+                entry.upperAbsoluteErrorSumHz += std::fabs(measurement.upperHz - *requestedUpperRateHz);
+            }
+            entry.parentMinHz = std::min(entry.parentMinHz, measurement.parentHz);
+            entry.parentMaxHz = std::max(entry.parentMaxHz, measurement.parentHz);
+            entry.upperMinHz = std::min(entry.upperMinHz, measurement.upperHz);
+            entry.upperMaxHz = std::max(entry.upperMaxHz, measurement.upperHz);
+        }
+    }
+
+    return true;
+}
+
+static bool CaptureSafeStableAggregate(
+    DWORD settleMs,
+    DWORD sampleMs,
+    int deviceIndex,
+    ULONG runCount,
+    const double* requestedUpperRateHz,
+    std::vector<RateCurveAggregateMeasurement>* aggregate)
+{
+    std::vector<RateCandidateMeasurement> measurements;
+
+    aggregate->clear();
+    aggregate->reserve(sizeof(kRateSweepSafeStableCandidatesUs) / sizeof(kRateSweepSafeStableCandidatesUs[0]));
+    for (ULONG intervalUs : kRateSweepSafeStableCandidatesUs) {
+        RateCurveAggregateMeasurement measurement = {};
+        measurement.intervalUs = intervalUs;
+        aggregate->push_back(measurement);
+    }
+
+    for (ULONG runIndex = 0; runIndex < runCount; ++runIndex) {
+        std::fprintf(stderr, "  run %lu/%lu\n", runIndex + 1, runCount);
+
+        if (!CaptureSafeStableMeasurements(
+                settleMs,
+                sampleMs,
+                deviceIndex,
+                &measurements)) {
+            return false;
+        }
+
+        for (size_t index = 0; index < measurements.size(); ++index) {
+            const RateCandidateMeasurement& measurement = measurements[index];
+            RateCurveAggregateMeasurement& entry = (*aggregate)[index];
+            entry.sampleCount += 1;
+            entry.parentSumHz += measurement.parentHz;
+            entry.upperSumHz += measurement.upperHz;
+            if (requestedUpperRateHz != nullptr) {
+                entry.upperAbsoluteErrorSumHz += std::fabs(measurement.upperHz - *requestedUpperRateHz);
+            }
+            entry.parentMinHz = std::min(entry.parentMinHz, measurement.parentHz);
+            entry.parentMaxHz = std::max(entry.parentMaxHz, measurement.parentHz);
+            entry.upperMinHz = std::min(entry.upperMinHz, measurement.upperHz);
+            entry.upperMaxHz = std::max(entry.upperMaxHz, measurement.upperHz);
+        }
     }
 
     return true;
@@ -1150,7 +1323,6 @@ static void CmdRateCurveStats(int argc, char* argv[])
     long sampleMs = 1000;
     const char* outputPath = nullptr;
     std::vector<RateCurveAggregateMeasurement> aggregate;
-    std::vector<RateCandidateMeasurement> measurements;
 
     if (argc >= 3 && !ParseLongArgument(argv[2], 1, 20, &runCount)) {
         std::fprintf(stderr, "Invalid run count: %s\n", argv[2]);
@@ -1171,13 +1343,6 @@ static void CmdRateCurveStats(int argc, char* argv[])
         outputPath = argv[5];
     }
 
-    aggregate.reserve(sizeof(kRateSweepCandidatesUs) / sizeof(kRateSweepCandidatesUs[0]));
-    for (ULONG intervalUs : kRateSweepCandidatesUs) {
-        RateCurveAggregateMeasurement measurement = {};
-        measurement.intervalUs = intervalUs;
-        aggregate.push_back(measurement);
-    }
-
     std::fprintf(
         stderr,
         "Capturing aggregated rate curve for upper device index %ld, sample window %ld ms, runs %ld\n",
@@ -1185,30 +1350,16 @@ static void CmdRateCurveStats(int argc, char* argv[])
         sampleMs,
         runCount);
 
-    for (long runIndex = 0; runIndex < runCount; ++runIndex) {
-        std::fprintf(stderr, "  run %ld/%ld\n", runIndex + 1, runCount);
-
-        if (!CaptureRateCurveMeasurements(
-                kSettleMs,
-                static_cast<DWORD>(sampleMs),
-                static_cast<int>(deviceIndex),
-                &measurements)) {
-            std::fprintf(stderr, "Rate curve stats capture failed (error %lu).\n", GetLastError());
-            ApplyLowerPacingIntervalUs(0);
-            return;
-        }
-
-        for (size_t index = 0; index < measurements.size(); ++index) {
-            const RateCandidateMeasurement& measurement = measurements[index];
-            RateCurveAggregateMeasurement& entry = aggregate[index];
-            entry.sampleCount += 1;
-            entry.parentSumHz += measurement.parentHz;
-            entry.upperSumHz += measurement.upperHz;
-            entry.parentMinHz = std::min(entry.parentMinHz, measurement.parentHz);
-            entry.parentMaxHz = std::max(entry.parentMaxHz, measurement.parentHz);
-            entry.upperMinHz = std::min(entry.upperMinHz, measurement.upperHz);
-            entry.upperMaxHz = std::max(entry.upperMaxHz, measurement.upperHz);
-        }
+    if (!CaptureRateCurveAggregate(
+            kSettleMs,
+            static_cast<DWORD>(sampleMs),
+            static_cast<int>(deviceIndex),
+            static_cast<ULONG>(runCount),
+            nullptr,
+            &aggregate)) {
+        std::fprintf(stderr, "Rate curve stats capture failed (error %lu).\n", GetLastError());
+        ApplyLowerPacingIntervalUs(0);
+        return;
     }
 
     if (!ApplyLowerPacingIntervalUs(0)) {
@@ -1218,12 +1369,8 @@ static void CmdRateCurveStats(int argc, char* argv[])
     std::printf(
         "interval_us,runs,parent_mean_hz,parent_min_hz,parent_max_hz,upper_mean_hz,upper_min_hz,upper_max_hz\n");
     for (const RateCurveAggregateMeasurement& measurement : aggregate) {
-        const double parentMeanHz = measurement.sampleCount != 0
-            ? measurement.parentSumHz / static_cast<double>(measurement.sampleCount)
-            : 0.0;
-        const double upperMeanHz = measurement.sampleCount != 0
-            ? measurement.upperSumHz / static_cast<double>(measurement.sampleCount)
-            : 0.0;
+        const double parentMeanHz = ComputeAggregateMeanHz(measurement.parentSumHz, measurement.sampleCount);
+        const double upperMeanHz = ComputeAggregateMeanHz(measurement.upperSumHz, measurement.sampleCount);
         std::printf(
             "%lu,%lu,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f\n",
             measurement.intervalUs,
@@ -1245,6 +1392,117 @@ static void CmdRateCurveStats(int argc, char* argv[])
         std::fprintf(stderr, "Stats CSV written to %s\n", outputPath);
     }
 }
+
+static void CmdRateStable(int argc, char* argv[])
+{
+    constexpr DWORD kSettleMs = 200;
+    long requestedUpperRateHz = 0;
+    long runCount = 3;
+    long deviceIndex = 0;
+    long sampleMs = 1000;
+    std::vector<RateCurveAggregateMeasurement> aggregate;
+    StableRateResult bestResult = {};
+    bool hasBestResult = false;
+
+    if (argc < 3 || !ParseLongArgument(argv[2], 1, 500, &requestedUpperRateHz)) {
+        std::fprintf(stderr, "Usage: GaYmCLI rate-stable <upper_hz> [runs] [device_index] [sample_ms]\n");
+        return;
+    }
+
+    if (argc >= 4 && !ParseLongArgument(argv[3], 1, 20, &runCount)) {
+        std::fprintf(stderr, "Invalid run count: %s\n", argv[3]);
+        return;
+    }
+
+    if (argc >= 5 && !ParseLongArgument(argv[4], 0, 64, &deviceIndex)) {
+        std::fprintf(stderr, "Invalid device index: %s\n", argv[4]);
+        return;
+    }
+
+    if (argc >= 6 && !ParseLongArgument(argv[5], 250, 10000, &sampleMs)) {
+        std::fprintf(stderr, "Invalid sample duration: %s\n", argv[5]);
+        return;
+    }
+
+    std::fprintf(
+        stderr,
+        "Searching stable upper target %.1f Hz, runs %ld, device index %ld, sample window %ld ms, safe intervals 0-2500 us\n",
+        static_cast<double>(requestedUpperRateHz),
+        runCount,
+        deviceIndex,
+        sampleMs);
+
+    const double requestedUpperRate = static_cast<double>(requestedUpperRateHz);
+    if (!CaptureSafeStableAggregate(
+            kSettleMs,
+            static_cast<DWORD>(sampleMs),
+            static_cast<int>(deviceIndex),
+            static_cast<ULONG>(runCount),
+            &requestedUpperRate,
+            &aggregate)) {
+        std::fprintf(stderr, "Stable rate search failed (error %lu).\n", GetLastError());
+        ApplyLowerPacingIntervalUs(0);
+        return;
+    }
+
+    for (const RateCurveAggregateMeasurement& measurement : aggregate) {
+        const double parentMeanHz = ComputeAggregateMeanHz(measurement.parentSumHz, measurement.sampleCount);
+        const double upperMeanHz = ComputeAggregateMeanHz(measurement.upperSumHz, measurement.sampleCount);
+        const double meanAbsoluteUpperErrorHz = ComputeAggregateMeanAbsoluteErrorHz(measurement);
+        const double upperRangeHz = ComputeAggregateRangeHz(
+            measurement.upperMinHz,
+            measurement.upperMaxHz,
+            measurement.sampleCount);
+        const double bestUpperRangeHz = ComputeAggregateRangeHz(
+            bestResult.upperMinHz,
+            bestResult.upperMaxHz,
+            bestResult.sampleCount);
+        const double meanUpperErrorHz = std::fabs(upperMeanHz - requestedUpperRate);
+        const double bestMeanUpperErrorHz = std::fabs(bestResult.upperMeanHz - requestedUpperRate);
+
+        if (!hasBestResult ||
+            meanAbsoluteUpperErrorHz < bestResult.meanAbsoluteUpperErrorHz ||
+            (meanAbsoluteUpperErrorHz == bestResult.meanAbsoluteUpperErrorHz &&
+             upperRangeHz < bestUpperRangeHz) ||
+            (meanAbsoluteUpperErrorHz == bestResult.meanAbsoluteUpperErrorHz &&
+             upperRangeHz == bestUpperRangeHz &&
+             meanUpperErrorHz < bestMeanUpperErrorHz)) {
+            bestResult.intervalUs = measurement.intervalUs;
+            bestResult.sampleCount = measurement.sampleCount;
+            bestResult.parentMeanHz = parentMeanHz;
+            bestResult.upperMeanHz = upperMeanHz;
+            bestResult.parentMinHz = measurement.parentMinHz;
+            bestResult.parentMaxHz = measurement.parentMaxHz;
+            bestResult.upperMinHz = measurement.upperMinHz;
+            bestResult.upperMaxHz = measurement.upperMaxHz;
+            bestResult.meanAbsoluteUpperErrorHz = meanAbsoluteUpperErrorHz;
+            hasBestResult = true;
+        }
+    }
+
+    if (!hasBestResult) {
+        std::fprintf(stderr, "Stable rate search produced no measurements.\n");
+        ApplyLowerPacingIntervalUs(0);
+        return;
+    }
+
+    if (!ApplyLowerPacingIntervalUs(bestResult.intervalUs)) {
+        std::fprintf(stderr, "Failed to apply stable best interval (error %lu).\n", GetLastError());
+        return;
+    }
+
+    std::printf(
+        "Stable best match: interval=%lu us runs=%lu parent_mean=%.1f Hz upper_mean=%.1f Hz "
+        "upper_range=%.1f-%.1f Hz mean_abs_upper_error=%.1f Hz target=%.1f Hz\n",
+        bestResult.intervalUs,
+        bestResult.sampleCount,
+        bestResult.parentMeanHz,
+        bestResult.upperMeanHz,
+        bestResult.upperMinHz,
+        bestResult.upperMaxHz,
+        bestResult.meanAbsoluteUpperErrorHz,
+        static_cast<double>(requestedUpperRateHz));
+}
 #else
 static void CmdRate(int argc, char* argv[])
 {
@@ -1265,6 +1523,13 @@ static void CmdRateCurveStats(int argc, char* argv[])
     UNREFERENCED_PARAMETER(argc);
     UNREFERENCED_PARAMETER(argv);
     std::fprintf(stderr, "The ratecurve-stats command is not available in the release bundle profile.\n");
+}
+
+static void CmdRateStable(int argc, char* argv[])
+{
+    UNREFERENCED_PARAMETER(argc);
+    UNREFERENCED_PARAMETER(argv);
+    std::fprintf(stderr, "The rate-stable command is not available in the release bundle profile.\n");
 }
 #endif
 
@@ -1784,6 +2049,7 @@ int main(int argc, char* argv[])
     else if (_stricmp(cmd, "off")    == 0) CmdOverride(argc, argv, false);
     else if (_stricmp(cmd, "jitter") == 0) CmdJitter(argc, argv);
     else if (_stricmp(cmd, "rate")   == 0) CmdRate(argc, argv);
+    else if (_stricmp(cmd, "rate-stable") == 0) CmdRateStable(argc, argv);
     else if (_stricmp(cmd, "ratecurve") == 0) CmdRateCurve(argc, argv);
     else if (_stricmp(cmd, "ratecurve-stats") == 0) CmdRateCurveStats(argc, argv);
     else if (_stricmp(cmd, "test")   == 0) CmdTest(argc, argv);

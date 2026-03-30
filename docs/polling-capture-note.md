@@ -402,3 +402,64 @@ First validation capture with `ratecurve-stats 2 0 500` showed:
 - parent cadence is relatively stable once intervals reach the `4000-5000 us` range
 - upper cadence remains visibly noisier over the same range
 - repeated captures are therefore more informative than single-pass sweeps when characterizing the upper transfer curve
+
+## Safe-Capped Parent Probe Follow-Up
+
+After one aggressive parent-side stable-rate search produced a watchdog bugcheck, the parent probe was hardened:
+
+- parent pacing cap reduced to `2500 us`
+- non-passive completion-path stall capped to `100 us`
+- `rate-stable` narrowed to the `0-2500 us` interval set
+
+Guarded validation:
+
+```text
+GAYM_CONTROL_TARGET=lower
+GaYmCLI rate-stable 100 2 0 500
+GaYmCLI jitter off
+```
+
+Observed:
+
+- no bugcheck in the guarded run
+- best interval selected: `2500 us`
+- parent mean: `252.0 Hz`
+- upper mean: `257.0 Hz`
+- upper range: `256.0-258.0 Hz`
+
+Interpretation:
+
+- the safety cap made the experiment materially safer in this one guarded pass
+- it also removed most of the useful control effect
+- the earlier large upper-rate bend appears to depend on a level of inline parent-path delay that is not acceptable on the hot path
+
+## Host-Stack Reconnaissance Direction
+
+Broader research into the public `hidusbf` package suggests the meaningful polling change is tied to the host USB stack rather than to post-HID completion delay.
+
+That points the spike toward a new evidence-gathering step:
+
+- capture the active host-stack ancestry for the composite parent
+- fingerprint the service image paths and file versions involved
+- use that to judge whether host-stack patching or interception is a realistic next experiment on this machine
+
+For that purpose, the repo now includes:
+
+```text
+scripts\capture-host-polling-context.ps1
+```
+
+First capture on this machine showed:
+
+- composite parent service chain:
+  - `dc1-controller -> USBHUB3 -> USBXHCI -> pci -> ACPI`
+- active host controller service:
+  - `USBXHCI`
+- active host controller binary:
+  - `C:\Windows\System32\drivers\USBXHCI.SYS`
+  - version `10.0.26100.2454`
+
+That matters because it narrows the host-stack research target on this box:
+
+- the next serious `hidusbf`-style research candidate is the `USBXHCI` path
+- not `USBPORT.SYS`, which is not the active controller path for this device on this machine

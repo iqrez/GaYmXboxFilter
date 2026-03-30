@@ -132,9 +132,10 @@ static ULONG GaYmMinUlong(_In_ ULONG left, _In_ ULONG right)
 }
 
 #if GAYM_ENABLE_DEV_DIAGNOSTICS
-#define GAYM_PARENT_PROBE_MAX_JITTER_US 5000u
+#define GAYM_PARENT_PROBE_MAX_JITTER_US 2500u
 #define GAYM_PARENT_PROBE_SLEEP_THRESHOLD_US 1000u
 #define GAYM_PARENT_PROBE_BUSY_TAIL_US 200u
+#define GAYM_PARENT_PROBE_MAX_DISPATCH_STALL_US 100u
 
 static BOOLEAN GaYmIsParentProbeJitterTarget(
     _In_ const PDEVICE_CONTEXT Ctx,
@@ -220,6 +221,7 @@ static VOID GaYmDelayUntilScheduledTime100ns(
 {
     ULONGLONG now100ns;
     ULONGLONG remaining100ns;
+    const KIRQL currentIrql = KeGetCurrentIrql();
 
     while (TRUE) {
         now100ns = KeQueryInterruptTime();
@@ -228,7 +230,7 @@ static VOID GaYmDelayUntilScheduledTime100ns(
         }
 
         remaining100ns = DueTime100ns - now100ns;
-        if (KeGetCurrentIrql() <= APC_LEVEL &&
+        if (currentIrql <= APC_LEVEL &&
             remaining100ns > (ULONGLONG)GAYM_PARENT_PROBE_SLEEP_THRESHOLD_US * 10ull) {
             ULONGLONG sleep100ns = remaining100ns;
 
@@ -241,7 +243,12 @@ static VOID GaYmDelayUntilScheduledTime100ns(
             }
         }
 
-        KeStallExecutionProcessor((ULONG)((remaining100ns + 9ull) / 10ull));
+        KeStallExecutionProcessor(
+            GaYmMinUlong(
+                (ULONG)((remaining100ns + 9ull) / 10ull),
+                currentIrql <= APC_LEVEL
+                    ? (ULONG)((remaining100ns + 9ull) / 10ull)
+                    : GAYM_PARENT_PROBE_MAX_DISPATCH_STALL_US));
         break;
     }
 }

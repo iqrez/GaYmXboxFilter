@@ -601,14 +601,15 @@ static void CmdOverride(int argc, char* argv[], bool enable)
 #if GAYM_ENABLE_DEV_DIAGNOSTICS
 static void CmdJitter(int argc, char* argv[])
 {
+    const GaYmControlTarget target = GaYmGetControlTargetPreference();
     if (argc < 3) {
         PrintUsage();
         return;
     }
 
-    HANDLE h = OpenGaYmDeviceForTarget(GaYmControlTarget::Upper, 0);
+    HANDLE h = OpenGaYmDeviceForTarget(target, 0);
     if (h == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "ERROR: Cannot open upper control device (error %lu).\n", GetLastError());
+        fprintf(stderr, "ERROR: Cannot open requested control device (error %lu).\n", GetLastError());
         return;
     }
 

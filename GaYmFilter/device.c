@@ -131,6 +131,67 @@ static ULONG GaYmMinUlong(_In_ ULONG left, _In_ ULONG right)
     return left < right ? left : right;
 }
 
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
+#define GAYM_PARENT_PROBE_MAX_JITTER_US 5000u
+
+static ULONG GaYmSelectConfiguredJitterUs(
+    _In_ PDEVICE_CONTEXT Ctx,
+    _In_ ULONG RequestType,
+    _In_ ULONG IoControlCode)
+{
+    ULONG minDelayUs;
+    ULONG maxDelayUs;
+    ULONGLONG tick;
+
+    if (Ctx->JitterConfig.Enabled == FALSE) {
+        return 0;
+    }
+
+    if (Ctx->VendorId != 0x045E || Ctx->ProductId != 0x0B12) {
+        return 0;
+    }
+
+    if (RequestType != GAYM_TRACE_REQUEST_INTERNAL_DEVICE_CONTROL ||
+        IoControlCode != 0x00220003) {
+        return 0;
+    }
+
+    minDelayUs = GaYmMinUlong(Ctx->JitterConfig.MinDelayUs, GAYM_PARENT_PROBE_MAX_JITTER_US);
+    maxDelayUs = GaYmMinUlong(Ctx->JitterConfig.MaxDelayUs, GAYM_PARENT_PROBE_MAX_JITTER_US);
+    if (minDelayUs > maxDelayUs) {
+        return 0;
+    }
+
+    if (minDelayUs == maxDelayUs) {
+        return maxDelayUs;
+    }
+
+    tick = KeQueryInterruptTime();
+    return minDelayUs + (ULONG)(tick % (ULONGLONG)(maxDelayUs - minDelayUs + 1));
+}
+
+static VOID GaYmApplyConfiguredJitter(
+    _In_ PDEVICE_CONTEXT Ctx,
+    _In_ ULONG RequestType,
+    _In_ ULONG IoControlCode)
+{
+    const ULONG delayUs = GaYmSelectConfiguredJitterUs(Ctx, RequestType, IoControlCode);
+    if (delayUs != 0) {
+        KeStallExecutionProcessor(delayUs);
+    }
+}
+#else
+static VOID GaYmApplyConfiguredJitter(
+    _In_ PDEVICE_CONTEXT Ctx,
+    _In_ ULONG RequestType,
+    _In_ ULONG IoControlCode)
+{
+    UNREFERENCED_PARAMETER(Ctx);
+    UNREFERENCED_PARAMETER(RequestType);
+    UNREFERENCED_PARAMETER(IoControlCode);
+}
+#endif
+
 static UCHAR GaYmCaptureIrpInputSample(
     _In_ PIRP Irp,
     _In_ PIO_STACK_LOCATION Stack,
@@ -1995,11 +2056,6 @@ VOID GaYmEvtRequestCompletion(
 
     UNREFERENCED_PARAMETER(Target);
 
-    InterlockedIncrement(&ctx->CompletedInputRequests);
-    if (ctx->PendingInputRequests > 0) {
-        InterlockedDecrement(&ctx->PendingInputRequests);
-    }
-
     RtlZeroMemory(rawSample, sizeof(rawSample));
     RtlZeroMemory(patchedSample, sizeof(patchedSample));
 
@@ -2029,6 +2085,13 @@ VOID GaYmEvtRequestCompletion(
                 GaYmCopySampleBytes(patchedSample, sizeof(patchedSample), &patchedSampleLength, buffer, patchedLength);
             }
         }
+    }
+
+    GaYmApplyConfiguredJitter(ctx, requestType, ioControlCode);
+
+    InterlockedIncrement(&ctx->CompletedInputRequests);
+    if (ctx->PendingInputRequests > 0) {
+        InterlockedDecrement(&ctx->PendingInputRequests);
     }
 
     GaYmUpdateCompletionTelemetry(

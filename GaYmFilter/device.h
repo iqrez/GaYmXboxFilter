@@ -68,7 +68,7 @@ typedef struct _DEVICE_CONTEXT {
     GAYM_REPORT                     LastSemanticCaptureReport;
     GAYM_TRACE_ENTRY                Trace[GAYM_TRACE_HISTORY_COUNT];
 
-    /* Jitter (config only - actual delay is in user-mode) */
+    /* Dev-only completion delay for spike experiments */
     GAYM_JITTER_CONFIG              JitterConfig;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 

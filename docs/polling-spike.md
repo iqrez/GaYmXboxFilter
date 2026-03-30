@@ -109,7 +109,7 @@ Current experimental package paths:
 
 ## Current Result
 
-The USB-child probe is now a completed measurement step.
+The USB-child probe is now a completed measurement step, and the composite-parent probe is now the first positive cadence-observation result.
 
 Observed with the HID-child lower extension removed:
 
@@ -129,6 +129,31 @@ Interpretation:
 - the USB `02FF` child is useful for semantic observation
 - it is not sufficient, by itself, to prove or control hardware-visible polling cadence
 - the next lower-path candidate is the composite parent `USB\VID_045E&PID_0B12...`
+
+Observed on the isolated composite-parent probe:
+
+- parent stack:
+  - `xboxgip -> dc1-controller -> GaYmFilter -> USBPcap -> ACPI -> USBHUB3`
+- USB child:
+  - `HidUsb -> xboxgip`
+- HID child:
+  - `GaYmXInputFilter -> xinputhid -> HidUsb`
+
+Measured result:
+
+- upper path still runs at roughly `250 Hz`
+- lower parent path now shows a matching live cadence on internal control traffic
+- observed lower cadence is approximately `124-127` internal-control requests per `500 ms`
+- active semantic source remains:
+  - `ioctl=0x00220003`
+  - `len=17`
+
+Updated interpretation:
+
+- the composite parent is the first lower path that exposes a live repeating cadence signal comparable to the upper path
+- this is the first credible candidate for real hardware-visible polling experimentation on this machine
+- the next spike step is no longer discovery of the timing owner
+- the next spike step is controlled perturbation of this parent-path cadence to see whether upper-visible polling behavior changes
 
 ## Guardrails
 

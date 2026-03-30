@@ -216,3 +216,59 @@ Interpretation:
 - the isolated USB-child attachment removes the old control-plane ambiguity cleanly
 - even in that clean state, the USB-child path does not expose a live cadence signal comparable to the upper path
 - that makes the composite parent the next logical candidate for a true hardware-polling probe
+
+## Composite-Parent Isolation Result
+
+Follow-up topology after removing the USB-child probe and attaching the parent probe:
+
+### Parent Composite
+
+```text
+xboxgip
+dc1-controller
+GaYmFilter
+USBPcap
+ACPI
+USBHUB3
+```
+
+### USB Input Child
+
+```text
+HidUsb
+xboxgip
+```
+
+### HID Child
+
+```text
+GaYmXInputFilter
+xinputhid
+HidUsb
+```
+
+Measured with:
+
+```text
+CadenceProbe.exe 3 500 upper 0
+CadenceProbe.exe 3 500 lower 0
+```
+
+Observed:
+
+- upper path:
+  - approximately `125-139` device-control completions per `500 ms`
+  - roughly `250 Hz`
+- lower parent path:
+  - approximately `124-127` internal-control requests per `500 ms`
+  - matching completed request cadence in the same range
+  - semantic source remains:
+    - `ioctl=0x00220003`
+    - `len=17`
+
+Interpretation:
+
+- unlike the isolated USB-child probe, the composite parent exposes a live repeating cadence signal
+- that cadence is in the same range as the proven upper-path polling cadence
+- this strongly suggests the timing owner for real polling experiments sits on or below the composite-parent `0B12` path
+- the next spike step should be a controlled perturbation experiment on the parent-path internal-control flow

@@ -2390,3 +2390,54 @@ Interpretation:
 - `0x0003634C` is the secondary controller timing body
 - unlike `0x0001B1F0`, it does not produce a meaningful deeper timing child
 - its exclusive descendants demote into wrapper, trace, bridge-to-stub, or interrupt-side context
+
+The spike now also includes a direct controller-core comparison:
+
+- `scripts\capture-usbxhci-controller-core-compare.ps1`
+
+Current controller-core comparison on this machine:
+
+- output:
+  - `out\dev\usbxhci-controller-core-compare.txt`
+- ordering:
+  - primary controller core:
+    - `0x0001B1F0`
+  - primary inner timing descendant:
+    - `0x0003FC38`
+  - secondary controller core:
+    - `0x0003634C`
+
+Interpretation:
+
+- `0x0001B1F0` is the broader timing/orchestration core
+- `0x0003634C` is the narrower pacing-oriented contrast body
+- `0x0003FC38` is not a peer controller core; it is the inner timing descendant under `0x0001B1F0`
+
+The spike now also includes a focused `0x00015D30` transfer-event micro-map:
+
+- `scripts\capture-usbxhci-15d30-micromap.ps1`
+
+Current `0x00015D30` micro-map result on this machine:
+
+- output:
+  - `out\dev\usbxhci-15d30-micromap.txt`
+- direct transfer surface on `0x00015D30`:
+  - `KeAcquireSpinLockRaiseToDpc`
+  - `KeReleaseSpinLock`
+  - `IoFreeMdl`
+  - `KeLowerIrql`
+  - `KfRaiseIrql`
+- direct branch groups:
+  - trace-side:
+    - `0x0002F368`
+    - `0x00016220`
+  - MDL-side cleanup:
+    - `0x000163D8`
+  - thunk:
+    - `0x00058B00`
+
+Interpretation:
+
+- `0x00015D30` is the strongest remaining transfer-side leaf body
+- unlike the controller cores, it keeps spinlock and IRQL transition machinery but no timer/wait orchestration
+- its direct descendants do not expose a better deeper transfer core

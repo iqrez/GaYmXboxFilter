@@ -139,3 +139,36 @@ The next probe should be minimal and should answer only one question:
 - can observed request cadence or completion cadence be changed from the parent/composite or USB-child side?
 
 That probe should prefer measurement over modification first.
+
+Current implementation for that purpose:
+
+```text
+CadenceProbe.exe [seconds] [interval_ms] [target] [device_index]
+```
+
+Use the lower target first to establish the current HID-child cadence baseline before retargeting any lower attachment experiment.
+
+## First Baseline Measurements
+
+Captured with:
+
+```text
+CadenceProbe.exe 3 500 lower 0
+CadenceProbe.exe 3 500 upper 0
+```
+
+Observed on the current supported stack:
+
+- lower target, idle, no explicit consumer open:
+  - essentially flat over 3 seconds
+  - no meaningful read/devctl cadence observed
+- upper target, idle:
+  - consistent `0x8000E00C` device-control cadence
+  - approximately `127-142` completions per `500 ms` sample window
+  - roughly `250+ Hz` effective upper-path request cadence
+
+Interpretation:
+
+- the upper path is clearly being polled continuously by an active consumer path on this machine
+- the current lower HID-child line does not show the same continuous cadence when sampled idle through the lower control plane
+- any future USB-child retarget should be compared against this exact upper/lower baseline rather than treated as an isolated reading

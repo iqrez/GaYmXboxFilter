@@ -92,6 +92,17 @@ Current capture note:
 
 - [polling-capture-note.md](./polling-capture-note.md)
 
+Current measurement tool:
+
+- `CadenceProbe.exe` in debug/full tool builds
+
+Current experimental package path:
+
+- `scripts\build-usb-child-probe-package.ps1`
+- `GaYmFilter\GaYmUsbChildProbe.inf`
+- `scripts\install-usb-child-probe.ps1`
+- `scripts\uninstall-usb-child-probe.ps1`
+
 ## Guardrails
 
 - Keep the stable product line untouched.

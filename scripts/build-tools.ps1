@@ -100,6 +100,7 @@ $fullBuilds = @(
     @{ Output = 'SecurityAutoVerify.exe'; Sources = @('SecurityAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'advapi32.lib') }
     @{ Output = 'DirectInputAutoVerify.exe'; Sources = @('DirectInputAutoVerify.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'dinput8.lib', 'dxguid.lib', 'ole32.lib', 'user32.lib') }
     @{ Output = 'CadenceProbe.exe'; Sources = @('CadenceProbe.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib') }
+    @{ Output = 'ObservationRollup.exe'; Sources = @('ObservationRollup.cpp') }
     @{ Output = 'JoySniffer.exe'; Sources = @('JoySniffer.cpp'); Libraries = @('winmm.lib') }
     @{ Output = 'WinMmPacketSniffer.exe'; Sources = @('WinMmPacketSniffer.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'winmm.lib') }
     @{ Output = 'DirectInputSniffer.exe'; Sources = @('DirectInputSniffer.cpp'); Libraries = @('dinput8.lib', 'dxguid.lib', 'ole32.lib', 'user32.lib') }

@@ -3415,3 +3415,31 @@ Interpretation:
 - the branch now defines the actual in-memory record and parser object model, not just row fields and algorithms
 - the hot path is explicitly constrained to a fixed-size numeric event record
 - the offline parser now has named objects for arms, wait pairs, correlated chains, and rollup summaries
+
+## USBXHCI ObservationRollup Tool
+
+The spike now also includes:
+
+```text
+GaYmTestFeeder\ObservationRollup.cpp
+```
+
+That tool implements the first user-mode parser and rollup path for the planned observation capture.
+
+Observed on this machine:
+
+- build output:
+  - `ObservationRollup.exe`
+- inputs:
+  - event rows file
+  - optional cadence window file
+- outputs:
+  - correlated chain file
+  - rollup file
+  - diagnostics file
+
+Interpretation:
+
+- the first observation pass now has an actual parser and rollup tool, not just design notes
+- the tool consumes the fixed-field event rows from the current spike design
+- implementation work can now move toward the live capture side instead of adding more offline planning

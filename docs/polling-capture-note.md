@@ -1471,3 +1471,66 @@ with immediate follow-on context in:
 - `0x00008878`
 
 and `0x00008454` kept only as the thinner endpoint-side continuation.
+
+## USBXHCI Transfer-Cluster Batch
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-transfer-cluster-batch.ps1
+```
+
+That read-only pass batch-captures and ranks the transfer-side neighborhood around `0x000077FC`:
+
+- `0x000076A0`
+- `0x000077FC`
+- `0x00007B70`
+- `0x00007D60`
+- `0x00008878`
+
+Observed on this machine:
+
+- `0x00007D60`
+  - size:
+    - `986`
+  - direct internal:
+    - `13`
+  - direct IAT:
+    - `0`
+  - strongest direct reconnects into the shared helper tier:
+    - `0x00006A08`
+    - `0x00006A44`
+    - `0x0001F9A4`
+    - `0x0001BF58`
+    - `0x000049B4`
+    - `0x00005BC0`
+  - also advances locally into:
+    - `0x00008140`
+    - `0x00008180`
+- `0x000077FC`
+  - remains rich, but ranked second
+  - larger fan-out into mixed helper and local transfer targets
+- `0x00008878`
+  - moderate secondary body
+- `0x00007B70`
+  - thin WPP/thunk-style edge body
+- `0x000076A0`
+  - thin WPP/thunk-style edge body
+
+Interpretation:
+
+- the larger batch test changes the target again in a useful way
+- `0x000077FC` is not a dead end, but `0x00007D60` is the stronger next body in the same transfer-side neighborhood
+- importantly, `0x00007D60` reconnects directly into the helper tier the branch has already mapped
+- so this is a stronger place to continue if the goal is to close the loop between transfer-side bodies and the previously identified helper structures
+
+So the next clean offline target is now:
+
+- `0x00007D60`
+
+with immediate follow-on context in:
+
+- `0x00008140`
+- `0x00008180`
+
+and `0x000077FC` kept as the upstream transfer-side feeder body.

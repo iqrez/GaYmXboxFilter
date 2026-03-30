@@ -1200,3 +1200,69 @@ with immediate follow-on context in:
 - `0x00008878`
 
 and `0x00008454` kept only as the thinner endpoint-side continuation.
+
+That larger read-only stage now exists too:
+
+- `scripts\capture-usbxhci-transfer-cluster-batch.ps1`
+
+Current transfer-cluster batch result on this machine:
+
+- tested neighborhood:
+  - `0x000076A0`
+  - `0x000077FC`
+  - `0x00007B70`
+  - `0x00007D60`
+  - `0x00008878`
+- recommended next:
+  - `0x00007D60`
+
+Ranking:
+
+- `0x00007D60`
+  - score `2286`
+  - `13` direct internal
+  - `0` direct IAT
+  - size `986`
+- `0x000077FC`
+  - score `1994`
+  - `10` direct internal
+  - `5` direct IAT
+  - size `869`
+- `0x00008878`
+  - score `866`
+- `0x00007B70`
+  - score `612`
+- `0x000076A0`
+  - score `465`
+
+Why `0x00007D60` won:
+
+- it is the densest body in the tested transfer-side neighborhood
+- it reconnects directly into the shared helper tier:
+  - `0x00006A08`
+  - `0x00006A44`
+  - `0x0001F9A4`
+  - `0x0001BF58`
+  - `0x000049B4`
+  - `0x00005BC0`
+- it also advances locally into:
+  - `0x00008140`
+  - `0x00008180`
+
+Interpretation:
+
+- the larger batch test did exactly what it was supposed to do
+- it showed that `0x000077FC` is rich, but not the best next target in its own neighborhood
+- `0x000076A0` and `0x00007B70` look more like thin WPP/thunk-style edge bodies
+- `0x00008878` is substantial but still secondary
+
+So the next clean offline target is now:
+
+- `0x00007D60`
+
+with immediate follow-on context in:
+
+- `0x00008140`
+- `0x00008180`
+
+and `0x000077FC` kept as the upstream transfer-side feeder body.

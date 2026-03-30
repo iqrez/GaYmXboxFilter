@@ -74,6 +74,16 @@ function Add-Section {
     $Lines.Add('') | Out-Null
 }
 
+function Format-RvaList {
+    param([uint32[]]$Values)
+
+    if (-not $Values -or $Values.Count -eq 0) {
+        return '<none>'
+    }
+
+    return [string]::Join(', ', ($Values | ForEach-Object { '0x{0:X8}' -f $_ }))
+}
+
 function Read-UInt16LE {
     param([byte[]]$Bytes, [int]$Offset)
     return [BitConverter]::ToUInt16($Bytes, $Offset)
@@ -687,7 +697,7 @@ Add-Section -Lines $lines -Title 'Summary' -Body @(
     "FeatureMapPath     : $resolvedFeatureMapPath",
     "TargetRva          : 0x$('{0:X8}' -f $TargetRva)",
     "PrimaryFunction    : $(Format-FunctionLabel -Function $primaryFunction)",
-    "FollowTargets      : $([string]::Join(', ', ($FollowTargetRvas | ForEach-Object { '0x{0:X8}' -f $_ })))"
+    ("FollowTargets      : {0}" -f (Format-RvaList -Values $FollowTargetRvas))
 )
 
 $primaryUnwind = Parse-UnwindInfoSummary -Bytes $bytes -Layout $layout -UnwindRva $primaryFunction.UnwindRva

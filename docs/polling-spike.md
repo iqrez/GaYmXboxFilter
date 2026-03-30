@@ -991,3 +991,56 @@ So the next clean offline targets are now the shared helper tier, starting with:
 - `0x0001F9A4`
 - `0x00006A44`
 - `0x000049B4`
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-shared-helper-assessment.ps1`
+
+Current shared-helper assessment on this machine:
+
+- assessed helpers:
+  - `0x0001F9A4`
+  - `0x00006A44`
+  - `0x000049B4`
+- recommended next:
+  - `0x00006A44`
+
+Why:
+
+- `0x0001F9A4`
+  - behaves like an instrumented wrapper
+  - one internal handoff to:
+    - `0x00058B00`
+  - one direct import:
+    - `WppAutoLogTrace`
+- `0x000049B4`
+  - behaves like a debug-heavy seam
+  - direct imports:
+    - `DbgPrint`
+    - `KdRefreshDebuggerNotPresent`
+- `0x00006A44`
+  - still behaves like a hot helper continuation
+  - direct internal edges:
+    - `0x00006BA0`
+    - `0x00007160`
+    - `0x00058B00`
+  - direct imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+
+Interpretation:
+
+- the shared-helper tier now resolves cleanly into one remaining hot candidate:
+  - `0x00006A44`
+- and that candidate feeds directly back into the earlier hot helper band:
+  - `0x00006BA0`
+  - `0x00007160`
+
+So the next clean offline targets are now:
+
+- `0x00006A44`
+
+with immediate follow-on context in:
+
+- `0x00006BA0`
+- `0x00007160`

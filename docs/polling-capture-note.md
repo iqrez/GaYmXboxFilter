@@ -1212,3 +1212,67 @@ Most useful next targets from this comparison:
   - sits immediately adjacent to the earlier hot helper band around `0x00006BA0`
 - `0x000049B4`
   - already appeared in the earlier transfer/helper convergence work
+
+## USBXHCI Shared Helper Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-shared-helper-assessment.ps1
+```
+
+That read-only pass compares the three shared-helper candidates selected from the endpoint-neighbor comparison:
+
+- `0x0001F9A4`
+- `0x00006A44`
+- `0x000049B4`
+
+Observed on this machine:
+
+- `0x0001F9A4`
+  - function:
+    - `0x0001F9A4-0x0001FAF2`
+  - assessment:
+    - instrumented wrapper
+  - direct internal:
+    - `0x00058B00`
+  - direct import:
+    - `WppAutoLogTrace`
+- `0x000049B4`
+  - function:
+    - `0x000049B4-0x00004AB9`
+  - assessment:
+    - debug-heavy seam
+  - direct imports:
+    - `DbgPrint`
+    - `KdRefreshDebuggerNotPresent`
+- `0x00006A44`
+  - function:
+    - `0x00006A44-0x00006B99`
+  - assessment:
+    - hot helper continuation
+  - direct internal:
+    - `0x00006BA0`
+    - `0x00007160`
+    - `0x00058B00`
+  - direct imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+
+Interpretation:
+
+- `0x0001F9A4` should be demoted to wrapper context
+- `0x000049B4` should be demoted to debug-seam context
+- `0x00006A44` is the only one of the three that still preserves the hot-path shape from the earlier helper band
+- importantly, it reconnects directly into:
+  - `0x00006BA0`
+  - `0x00007160`
+
+So the next clean offline target is now:
+
+- `0x00006A44`
+
+with immediate follow-on context in:
+
+- `0x00006BA0`
+- `0x00007160`

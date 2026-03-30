@@ -2798,3 +2798,42 @@ Interpretation:
   - `0x0001144D`
   - `0x00011E20`
   - leaf body `0x00010D60`
+
+## USBXHCI Event-Dispatch Branch Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-event-dispatch-branch-assessment.ps1
+```
+
+That pass resolves the open event-dispatch side after the helper-heavy reduction.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-event-dispatch-branch-assessment.txt`
+- shared event spine:
+  - `0x00003C70`
+  - `0x00003FA0`
+  - `0x00004124`
+  - `0x000049B4`
+  - `0x00005BC0`
+- `0x000038CC` unique line:
+  - `0x00003CBC` is mixed context
+  - `0x000042A0` is the first real unique event body
+  - `0x00015D30` is the only substantive deeper body under `0x000042A0`
+- `0x000077FC` unique line:
+  - `0x00007B70` reduces to trace
+  - `0x00008878` is a thin side body
+  - `0x0003C6A0` reconnects into trace/bridge context
+  - no better deeper body outranks `0x000077FC`
+
+Interpretation:
+
+- the shared event spine still does not expose a better common deeper body
+- the `0x000038CC` line reduces to:
+  - `0x000038CC -> 0x000042A0 -> leaf body 0x00015D30`
+- the `0x000077FC` line reduces to:
+  - sibling event-side leaf `0x000077FC`
+- if deeper host-side timing work continues, `0x000038CC` is now the better event-dispatch family to study

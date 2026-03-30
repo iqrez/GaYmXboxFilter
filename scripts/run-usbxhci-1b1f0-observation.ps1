@@ -2,13 +2,14 @@
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
-    [ValidateSet('Kernel', 'Live')]
+    [ValidateSet('Kernel', 'Live', 'HostEmitter')]
     [string]$Source = 'Kernel',
     [ValidateRange(1, 64)]
     [int]$SampleCount = 8,
     [ValidateRange(1, 250)]
     [int]$DueTimeMs = 8,
-    [string]$OutputPrefix
+    [string]$OutputPrefix,
+    [string]$CaptureToolPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,6 +36,60 @@ function Assert-ToolPath {
     if (-not (Test-Path $Path)) {
         throw "Required tool not found: $Path"
     }
+}
+
+function Resolve-ObservationSource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceName,
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$ResolvedLayout,
+        [string]$ExplicitToolPath
+    )
+
+    switch ($SourceName) {
+        'Kernel' {
+            return [pscustomobject]@{
+                Name          = 'Kernel'
+                Role          = 'LowerFilterControlPath'
+                RequiresAdmin = $true
+                ToolPath      = Get-GaYmToolPath -Layout $ResolvedLayout -Name 'ObservationCaptureKernel.exe'
+                Resolution    = 'RepoLocalTool'
+            }
+        }
+
+        'Live' {
+            return [pscustomobject]@{
+                Name          = 'Live'
+                Role          = 'InProcessWaitableTimer'
+                RequiresAdmin = $false
+                ToolPath      = Get-GaYmToolPath -Layout $ResolvedLayout -Name 'ObservationCaptureLive.exe'
+                Resolution    = 'RepoLocalTool'
+            }
+        }
+
+        'HostEmitter' {
+            if ($ExplicitToolPath) {
+                return [pscustomobject]@{
+                    Name          = 'HostEmitter'
+                    Role          = 'FutureUsbXhciEmitter'
+                    RequiresAdmin = $true
+                    ToolPath      = $ExplicitToolPath
+                    Resolution    = 'ExplicitToolPath'
+                }
+            }
+
+            return [pscustomobject]@{
+                Name          = 'HostEmitter'
+                Role          = 'FutureUsbXhciEmitter'
+                RequiresAdmin = $true
+                ToolPath      = Get-GaYmToolPath -Layout $ResolvedLayout -Name 'ObservationCaptureUsbXhciHost.exe'
+                Resolution    = 'DefaultFutureTool'
+            }
+        }
+    }
+
+    throw "Unsupported source: $SourceName"
 }
 
 function Invoke-RequiredCommand {
@@ -67,7 +122,7 @@ function Write-ObservationSessionSummary {
         [Parameter(Mandatory = $true)]
         [string]$Path,
         [Parameter(Mandatory = $true)]
-        [string]$SourceName,
+        [pscustomobject]$SourceInfo,
         [Parameter(Mandatory = $true)]
         [int]$RequestedSampleCount,
         [Parameter(Mandatory = $true)]
@@ -93,7 +148,10 @@ function Write-ObservationSessionSummary {
         'TargetBody=0x0001B1F0'
         'PrimaryWindow=timer-lifecycle-and-side-context'
         'SecondaryWindow=time-sampling-and-debug-gate'
-        ('Source={0}' -f $SourceName)
+        ('Source={0}' -f $SourceInfo.Name)
+        ('SourceRole={0}' -f $SourceInfo.Role)
+        ('SourceResolution={0}' -f $SourceInfo.Resolution)
+        ('CaptureTool={0}' -f $SourceInfo.ToolPath)
         'TransportContract=GAYM_OBSERVATION_EVENT_RECORD'
         ('RequestedSampleCount={0}' -f $RequestedSampleCount)
         ('RequestedDueTimeMs={0}' -f $RequestedDueTimeMs)
@@ -119,17 +177,13 @@ if (-not $OutputPrefix) {
     $OutputPrefix = 'usbxhci-1b1f0-observation'
 }
 
-if ($Source -eq 'Kernel') {
+$sourceInfo = Resolve-ObservationSource -SourceName $Source -ResolvedLayout $layout -ExplicitToolPath $CaptureToolPath
+
+if ($sourceInfo.RequiresAdmin) {
     Assert-Administrator
 }
 
-$captureToolName = if ($Source -eq 'Kernel') {
-    'ObservationCaptureKernel.exe'
-} else {
-    'ObservationCaptureLive.exe'
-}
-
-$captureTool = Get-GaYmToolPath -Layout $layout -Name $captureToolName
+$captureTool = $sourceInfo.ToolPath
 $rollupTool = Get-GaYmToolPath -Layout $layout -Name 'ObservationRollup.exe'
 
 Assert-ToolPath -Path $captureTool
@@ -152,7 +206,7 @@ Invoke-RequiredCommand -Label 'Rollup' -Action {
 
 Write-ObservationSessionSummary `
     -Path $sessionPath `
-    -SourceName $Source `
+    -SourceInfo $sourceInfo `
     -RequestedSampleCount $SampleCount `
     -RequestedDueTimeMs $DueTimeMs `
     -EventsPath $eventsPath `

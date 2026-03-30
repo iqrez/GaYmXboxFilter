@@ -2802,3 +2802,8 @@ Interpretation:
 - tools and driver builds are green on the new shared 64-byte event record ABI
 - the bounded lower-filter capture path is now validated end-to-end on the live composite parent probe
 - the new `run-usbxhci-1b1f0-observation.ps1` harness now binds that capture path to the first actual `0x0001B1F0` observation target and produces a single session manifest plus rollup artifacts
+- the harness now resolves capture sources explicitly:
+  - `Kernel`
+  - `Live`
+  - `HostEmitter`
+- `HostEmitter` is the stable future hook for the first real `USBXHCI` producer and can already be exercised with `-CaptureToolPath` without changing the downstream session or rollup format

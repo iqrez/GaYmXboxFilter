@@ -1149,3 +1149,54 @@ with immediate follow-on context in:
 - `0x00054F74`
 
 and `0x0000757C` kept only as a bridge marker into the nearby transfer-event region.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-endpoint-vs-transfer-assessment.ps1`
+
+Current endpoint-vs-transfer comparison on this machine:
+
+- endpoint-side continuation:
+  - `0x00008454`
+- transfer-side cluster:
+  - `0x000077FC`
+- recommended next:
+  - `0x000077FC`
+
+Why:
+
+- `0x00008454`
+  - is thin and instrumented
+  - one direct internal handoff to:
+    - `0x00058B00`
+  - one direct import:
+    - `WppAutoLogTrace`
+- `0x000077FC`
+  - is a much richer transfer-side body
+  - direct internal fan-out includes:
+    - `0x00003FA0`
+    - `0x00003C70`
+    - `0x00004124`
+    - `0x000049B4`
+    - `0x00005BC0`
+    - `0x00007B70`
+    - `0x00008878`
+  - direct imports include:
+    - `KeReleaseSpinLock`
+    - `KeAcquireSpinLockRaiseToDpc`
+
+Interpretation:
+
+- `0x00006E74` is still the important split point out of `0x00006BA0`
+- but if the goal is the richer next body for polling/scheduling recon, the bridge-side transfer cluster is now more valuable than the endpoint-side wrapper leg
+
+So the next clean offline target is now:
+
+- `0x000077FC`
+
+with immediate follow-on context in:
+
+- `0x00007B70`
+- `0x00008878`
+
+and `0x00008454` kept only as the thinner endpoint-side continuation.

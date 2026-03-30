@@ -1405,3 +1405,69 @@ with immediate follow-on context in:
 - `0x00054F74`
 
 and `0x0000757C` kept only as a transfer-side bridge marker.
+
+## USBXHCI Endpoint vs Transfer Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-endpoint-vs-transfer-assessment.ps1
+```
+
+That read-only pass compares:
+
+- the endpoint-side continuation reached from `0x00006E74`:
+  - `0x00008454`
+- the transfer-side cluster reached through the bridge neighborhood:
+  - `0x000077FC`
+
+Observed on this machine:
+
+- `0x00008454`
+  - size:
+    - `383`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `1`
+  - role:
+    - endpoint-side wrapper/continuation
+  - visible direct behavior:
+    - `0x00058B00`
+    - `WppAutoLogTrace`
+- `0x000077FC`
+  - size:
+    - `869`
+  - direct internal:
+    - `10`
+  - direct IAT:
+    - `5`
+  - role:
+    - transfer-side hot cluster
+  - visible direct behavior includes:
+    - `0x00003FA0`
+    - `0x00003C70`
+    - `0x00004124`
+    - `0x000049B4`
+    - `0x00005BC0`
+    - `0x00007B70`
+    - `0x00008878`
+    - `KeReleaseSpinLock`
+    - `KeAcquireSpinLockRaiseToDpc`
+
+Interpretation:
+
+- the endpoint-side continuation is still real, but it looks structurally thin and instrumented
+- the transfer-side cluster is materially richer and closer to the kind of fan-out expected from scheduling/transfer logic
+- so from this point in the spike, the transfer side is now the better next reverse-engineering target
+
+So the next clean offline target is now:
+
+- `0x000077FC`
+
+with immediate follow-on context in:
+
+- `0x00007B70`
+- `0x00008878`
+
+and `0x00008454` kept only as the thinner endpoint-side continuation.

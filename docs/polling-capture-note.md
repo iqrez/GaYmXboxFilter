@@ -3077,3 +3077,32 @@ Interpretation:
   - `timer-lifecycle-and-side-context`
   - `final-handoff`
 - the `setup-and-bridge` region is lower-value because it is dominated by wrapper and alternate-bridge setup
+
+## USBXHCI 3634C Window Map
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-3634c-window-map.ps1
+```
+
+That pass turns the raw `0x0003634C` call sites into bounded pacing and branch windows.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-3634c-window-map.txt`
+- bounded windows:
+  - `irql-and-shared-spine`
+  - `wrapper-and-time-anchor`
+  - `delayed-sleep-and-trace-side`
+  - `terminal-side-bridges`
+
+Interpretation:
+
+- `0x0003634C` should also be treated as bounded regions, not one undifferentiated body
+- highest-value pacing windows are:
+  - `irql-and-shared-spine`
+  - `wrapper-and-time-anchor`
+  - `delayed-sleep-and-trace-side`
+- `terminal-side-bridges` is lower-value because it is mostly bridge-to-stub and interrupt-side exit context

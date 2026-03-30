@@ -1044,3 +1044,58 @@ with immediate follow-on context in:
 
 - `0x00006BA0`
 - `0x00007160`
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-hot-helper-band-assessment.ps1`
+
+Current hot-helper-band assessment on this machine:
+
+- assessed band:
+  - `0x00006A44`
+  - `0x00006BA0`
+  - `0x00007160`
+- recommended next:
+  - `0x00006BA0`
+
+Role split:
+
+- `0x00006A44`
+  - entry helper
+  - points into:
+    - `0x00006BA0`
+    - `0x00007160`
+- `0x00006BA0`
+  - primary hot body
+  - strongest import profile in the band:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `IoQueueWorkItem`
+    - `KeGetCurrentIrql`
+  - internal edges into:
+    - `0x00006E74`
+    - `0x00007160`
+    - `0x0000757C`
+    - `0x00040D38`
+- `0x00007160`
+  - thin tail/thunk path
+  - only direct internal edge:
+    - `0x00058B00`
+
+Interpretation:
+
+- the surviving hot-helper band no longer needs to be treated as three equal candidates
+- `0x00006A44` is the feeder into the band
+- `0x00007160` is a thin exit
+- `0x00006BA0` is the actual body worth deeper offline study
+
+So the next clean offline target is now:
+
+- `0x00006BA0`
+
+with immediate follow-on context in:
+
+- `0x00006E74`
+- `0x0000757C`
+
+and `0x00040D38` kept only as the likely control/assert side branch.

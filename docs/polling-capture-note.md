@@ -1276,3 +1276,71 @@ with immediate follow-on context in:
 
 - `0x00006BA0`
 - `0x00007160`
+
+## USBXHCI Hot Helper Band Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-hot-helper-band-assessment.ps1
+```
+
+That read-only pass compares the three local members of the surviving hot-helper band:
+
+- `0x00006A44`
+- `0x00006BA0`
+- `0x00007160`
+
+Observed on this machine:
+
+- `0x00006A44`
+  - role:
+    - entry helper
+  - direct internal:
+    - `0x00006BA0`
+    - `0x00007160`
+    - `0x00058B00`
+  - direct imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+- `0x00006BA0`
+  - role:
+    - primary hot body
+  - direct internal:
+    - `0x00006E74`
+    - `0x00007160`
+    - `0x0000757C`
+    - `0x00040D38`
+    - `0x00058B00`
+  - direct imports:
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+    - `IoQueueWorkItem`
+    - `KeGetCurrentIrql`
+- `0x00007160`
+  - role:
+    - thin tail/thunk path
+  - direct internal:
+    - `0x00058B00`
+  - direct imports:
+    - none
+
+Interpretation:
+
+- `0x00006A44` should now be treated as the band entry point, not the main body
+- `0x00007160` should be treated as a narrow tail into the shared thunk
+- `0x00006BA0` is the only member of the band that still carries the full hot-body shape:
+  - larger body
+  - denser internal fan-out
+  - stronger spinlock/work-item import profile
+
+So the next clean offline target is now:
+
+- `0x00006BA0`
+
+with immediate follow-on context in:
+
+- `0x00006E74`
+- `0x0000757C`
+
+and `0x00040D38` kept only as likely control/assert context.

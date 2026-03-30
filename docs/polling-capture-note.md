@@ -3187,3 +3187,30 @@ Interpretation:
 - the branch now has a single ranked window-level order across controller and transfer targets
 - controller windows still outrank transfer windows for any future host-side timing study
 - the strongest transfer-side window is now explicitly positioned as the first contrast or fallback window after the controller family
+
+## USBXHCI Window Modality Matrix
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-window-modality-matrix.ps1
+```
+
+That pass groups the best controller and transfer windows by the timing primitives they expose, not just by rank.
+
+Observed on this machine:
+
+- output:
+  - `out\dev\usbxhci-window-modality-matrix.txt`
+- top modality anchors:
+  - `0x0001B1F0 timer-lifecycle-and-side-context`
+  - `0x0001B1F0 time-sampling-and-debug-gate`
+  - `0x0003634C wrapper-and-time-anchor`
+  - `0x0003634C delayed-sleep-and-trace-side`
+  - `0x00015D30 transfer-body-and-mdl-turnover`
+
+Interpretation:
+
+- the branch is now partitioned by timing modality as well as by target rank
+- controller timer and pacing windows remain the strongest starting points
+- transfer-side windows are now framed explicitly as MDL, lock, and IRQL contrast targets rather than competing controller timing cores

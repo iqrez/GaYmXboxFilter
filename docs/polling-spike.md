@@ -1734,3 +1734,94 @@ with immediate follow-on context in:
 - `0x00058AC0`
 
 and `0x0001BAC0` kept as the secondary branch body.
+
+That next read-only stage now exists too:
+
+- `scripts\capture-usbxhci-56dbc-band-assessment.ps1`
+
+Current `0x00056DBC` band assessment on this machine:
+
+- stub band:
+  - `0x00001008`
+  - `0x0000103C`
+  - `0x00001068`
+  - `0x00058AC0`
+- helper band:
+  - `0x00056B50`
+  - `0x00056BA0`
+  - `0x00056CA4`
+  - `0x00079C58`
+- adjacent bodies:
+  - `0x00057610`
+  - `0x00057748`
+  - `0x000585E4`
+- recommended next:
+  - `0x0001BAC0`
+- primary band state:
+  - registration/debug drift
+
+Why:
+
+- `0x00001008` and `0x0000103C`
+  - are tiny stubs:
+    - no direct internal
+    - no direct IAT
+- `0x00001068`
+  - is ETW-side stub context:
+    - one direct import:
+      - `EtwWriteTransfer`
+- `0x00058AC0`
+  - remains a tiny stub:
+    - no direct internal
+    - no direct IAT
+- `0x00056B50`
+  - is only a tiny bridge
+- `0x00056BA0`
+  - is a path/string helper:
+    - `IoQueryFullDriverPath`
+    - `RtlInitUnicodeString`
+    - `RtlUnicodeStringToAnsiString`
+    - `RtlFreeAnsiString`
+- `0x00056CA4`
+  - mixes allocation/spinlock setup with side-context fan-out:
+    - `0x00079C58`
+    - `0x00058BC0`
+- `0x00079C58`
+  - is ETW registration context:
+    - `EtwRegister`
+    - `EtwSetInformation`
+- `0x00057610`
+  - is ETW unregister / cleanup context:
+    - `EtwUnregister`
+    - `ExFreePoolWithTag`
+- `0x00057748`
+  - is debug/registry-heavy context:
+    - `DbgPrintEx`
+    - `ZwQueryKey`
+    - `ExAllocatePoolWithTag`
+- `0x000585E4`
+  - is only a tiny cleanup/free helper:
+    - `ExFreePoolWithTag`
+
+Interpretation:
+
+- the `0x00056DBC` line no longer looks like a productive hot transfer path
+- its immediate ecosystem has drifted into:
+  - ETW registration
+  - ETW unregister
+  - path/string handling
+  - registry/debug
+  - cleanup/free helpers
+- that means the clean next offline move is to pivot back to the unresolved secondary branch instead of pushing deeper into this band
+
+So the next clean offline target is now:
+
+- `0x0001BAC0`
+
+with immediate follow-on context in:
+
+- `0x0001BC34`
+- `0x0001BF58`
+- `0x0001F9A4`
+- `0x00005BC0`
+- `0x00006A08`

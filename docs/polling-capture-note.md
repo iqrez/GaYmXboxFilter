@@ -2120,3 +2120,158 @@ with immediate follow-on context in:
 - `0x00058AC0`
 
 and `0x0001BAC0` kept as the secondary branch body.
+
+## USBXHCI 56DBC Band Assessment
+
+The spike now also includes:
+
+```text
+scripts\capture-usbxhci-56dbc-band-assessment.ps1
+```
+
+That read-only pass assesses the full `0x00056DBC` neighborhood:
+
+- stub band:
+  - `0x00001008`
+  - `0x0000103C`
+  - `0x00001068`
+  - `0x00058AC0`
+- helper band:
+  - `0x00056B50`
+  - `0x00056BA0`
+  - `0x00056CA4`
+  - `0x00079C58`
+- adjacent bodies:
+  - `0x00057610`
+  - `0x00057748`
+  - `0x000585E4`
+
+Observed on this machine:
+
+- `0x00001008`
+  - size:
+    - `46`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x0000103C`
+  - size:
+    - `37`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x00001068`
+  - size:
+    - `162`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `EtwWriteTransfer`
+- `0x00058AC0`
+  - size:
+    - `30`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x00056B50`
+  - size:
+    - `72`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `0`
+- `0x00056BA0`
+  - size:
+    - `252`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `6`
+  - visible direct behavior includes:
+    - `0x00056CA4`
+    - `IoQueryFullDriverPath`
+    - `RtlInitUnicodeString`
+    - `RtlUnicodeStringToAnsiString`
+    - `RtlFreeAnsiString`
+- `0x00056CA4`
+  - size:
+    - `174`
+  - direct internal:
+    - `4`
+  - direct IAT:
+    - `2`
+  - visible direct behavior includes:
+    - `0x00079C58`
+    - `0x00058BC0`
+    - `ExAllocatePool2`
+    - `KeInitializeSpinLock`
+- `0x00079C58`
+  - size:
+    - `168`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `2`
+  - visible direct behavior:
+    - `EtwRegister`
+    - `EtwSetInformation`
+- `0x00057610`
+  - size:
+    - `303`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `7`
+  - visible direct behavior:
+    - `EtwUnregister`
+    - `ExFreePoolWithTag`
+    - `KeAcquireSpinLockRaiseToDpc`
+    - `KeReleaseSpinLock`
+- `0x00057748`
+  - size:
+    - `334`
+  - direct internal:
+    - `1`
+  - direct IAT:
+    - `7`
+  - visible direct behavior:
+    - `DbgPrintEx`
+    - `ZwQueryKey`
+    - `ExAllocatePoolWithTag`
+    - `0x000585E4`
+- `0x000585E4`
+  - size:
+    - `29`
+  - direct internal:
+    - `0`
+  - direct IAT:
+    - `1`
+  - visible direct behavior:
+    - `ExFreePoolWithTag`
+
+Interpretation:
+
+- this branch has drifted into:
+  - ETW registration
+  - ETW unregister
+  - path/string handling
+  - registry/debug
+  - cleanup/free helpers
+- it no longer looks like the best place to keep chasing a hot transfer-side continuation
+
+So the next clean offline target is now:
+
+- `0x0001BAC0`
+
+with immediate follow-on context in:
+
+- `0x0001BC34`
+- `0x0001BF58`
+- `0x0001F9A4`
+- `0x00005BC0`
+- `0x00006A08`

@@ -2806,4 +2806,7 @@ Interpretation:
   - `Kernel`
   - `Live`
   - `HostEmitter`
-- `HostEmitter` is the stable future hook for the first real `USBXHCI` producer and can already be exercised with `-CaptureToolPath` without changing the downstream session or rollup format
+- `HostEmitter` is now backed by:
+  - `GaYmTestFeeder\ObservationCaptureUsbXhciHost.cpp`
+- current `HostEmitter` mode is an adapter over the validated composite-parent lower probe
+- that keeps the session and rollup contract stable while the future real `USBXHCI` producer is still being designed

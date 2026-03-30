@@ -3474,4 +3474,7 @@ Current read:
 - the bounded kernel-side observation path is working on the live lower probe
 - `ObservationCaptureKernel.exe -> ObservationRollup.exe` is now a validated repo-local kernel capture pipeline
 - `run-usbxhci-1b1f0-observation.ps1` now wraps that pipeline into a single target-scoped session for the `0x0001B1F0` controller timing body
-- that harness now also supports a future `HostEmitter` source mode so the first actual `USBXHCI` producer can plug into the same artifact contract with only a producer swap
+- the harness now has a default `HostEmitter` binary:
+  - `ObservationCaptureUsbXhciHost.exe`
+- current `HostEmitter` mode is intentionally an adapter over the bounded lower composite probe, not a real `USBXHCI` emitter yet
+- that gives the spike a stable producer slot before deeper host-side work starts

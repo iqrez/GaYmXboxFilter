@@ -103,6 +103,7 @@ $fullBuilds = @(
     @{ Output = 'ObservationCaptureStub.exe'; Sources = @('ObservationCaptureStub.cpp') }
     @{ Output = 'ObservationCaptureLive.exe'; Sources = @('ObservationCaptureLive.cpp') }
     @{ Output = 'ObservationCaptureKernel.exe'; Sources = @('ObservationCaptureKernel.cpp') }
+    @{ Output = 'ObservationCaptureUsbXhciHost.exe'; Sources = @('ObservationCaptureUsbXhciHost.cpp') }
     @{ Output = 'ObservationRollup.exe'; Sources = @('ObservationRollup.cpp') }
     @{ Output = 'JoySniffer.exe'; Sources = @('JoySniffer.cpp'); Libraries = @('winmm.lib') }
     @{ Output = 'WinMmPacketSniffer.exe'; Sources = @('WinMmPacketSniffer.cpp', 'GuidDefinitions.cpp'); Libraries = @('setupapi.lib', 'winmm.lib') }

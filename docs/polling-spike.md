@@ -440,3 +440,26 @@ Follow-up recon narrowed that further:
 The spike now includes a dedicated read-only capture for that layer:
 
 - `scripts\capture-usbxhci-recon.ps1`
+
+The next read-only step now exists too:
+
+- `scripts\assess-usbxhci-patchability.ps1`
+
+Current assessment on this machine:
+
+- active host image:
+  - `C:\Windows\System32\drivers\USBXHCI.SYS`
+  - version `10.0.26100.2454`
+  - SHA256 `B010BFE5944E1C339D0216537137A29F7BE8391B4F0A3729490E44B08D06AF55`
+- target controller:
+  - `PCI\VEN_8086&DEV_7AE0&SUBSYS_86941043&REV_11\3&11583659&0&A0`
+  - `Intel(R) USB 3.20 eXtensible Host Controller - 1.20 (Microsoft)`
+- documented `hidusbfn` Win11 `USBXHCI` support range from the local package readme:
+  - `10.0.22000.1` through `10.0.22621.608`
+
+Interpretation:
+
+- host-stack work is still the right architectural layer if true `hidusbf`-style polling control is the goal
+- but direct reuse of `hidusbf`/`hidusbfn` era `USBXHCI` assumptions is not validated on this box
+- this machine is running a newer `USBXHCI.SYS` than the documented public patch range
+- any future host-stack experiment therefore starts as a fresh reverse-engineering/recon task, not a straight reuse exercise

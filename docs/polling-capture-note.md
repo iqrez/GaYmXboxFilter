@@ -476,3 +476,32 @@ Follow-up `USBXHCI` recon showed:
   - SHA256 `B010BFE5944E1C339D0216537137A29F7BE8391B4F0A3729490E44B08D06AF55`
 
 That is the concrete host-controller identity any future patch/intercept experiment would have to target on this box.
+
+## USBXHCI Patchability Assessment
+
+The spike now also includes:
+
+```text
+scripts\assess-usbxhci-patchability.ps1
+```
+
+That read-only assessment compares the active `USBXHCI.SYS` image on this box against the documented Win11 `hidusbfn` `USBXHCI` range from the local package readme.
+
+Observed:
+
+- target controller:
+  - `PCI\VEN_8086&DEV_7AE0&SUBSYS_86941043&REV_11\3&11583659&0&A0`
+  - `Intel(R) USB 3.20 eXtensible Host Controller - 1.20 (Microsoft)`
+- active image:
+  - `C:\Windows\System32\drivers\USBXHCI.SYS`
+  - version `10.0.26100.2454`
+  - SHA256 `B010BFE5944E1C339D0216537137A29F7BE8391B4F0A3729490E44B08D06AF55`
+- documented local `hidusbfn` Win11 range:
+  - minimum `10.0.22000.1`
+  - maximum `10.0.22621.608`
+
+Interpretation:
+
+- the controller path is clearly hanging from `USBXHCI`, so host-stack work is still the right research layer
+- but this exact `USBXHCI.SYS` build is newer than the documented public `hidusbfn` Win11 patch range
+- so a future host-stack experiment on this machine would need fresh image-specific recon instead of assuming the published `hidusbf` assumptions transfer directly

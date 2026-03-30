@@ -54,7 +54,15 @@ foreach ($package in $probePackages) {
     Write-Host "Removing $($package.PublishedName) ($($package.OriginalName))"
     $output = & pnputil /delete-driver $package.PublishedName /uninstall /force
     $output | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) {
+    $joinedOutput = $output -join "`n"
+    $rebootRequired = $joinedOutput -match 'System reboot is needed'
+    $deletedSuccessfully = $joinedOutput -match 'Driver package deleted successfully'
+
+    if ($LASTEXITCODE -ne 0 -and -not ($rebootRequired -and $deletedSuccessfully)) {
         throw "Failed to remove $($package.PublishedName)."
+    }
+
+    if ($rebootRequired) {
+        Write-Warning "Removal of $($package.PublishedName) is staged, but Windows still requires a reboot to complete unconfiguration."
     }
 }

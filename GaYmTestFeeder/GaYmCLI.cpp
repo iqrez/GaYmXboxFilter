@@ -9,6 +9,9 @@
  *   GaYmCLI.exe off   [device_index]      Disable override
  *   GaYmCLI.exe jitter <min_us> <max_us>  Set timing jitter (maintainer builds only)
  *   GaYmCLI.exe jitter off                Disable jitter (maintainer builds only)
+ *   GaYmCLI.exe rate parent <hz>          Tune lower pacing toward a parent cadence target
+ *   GaYmCLI.exe rate upper <hz>           Tune lower pacing toward an upper visible cadence target
+ *   GaYmCLI.exe rate off                  Disable lower pacing experiment
  *   GaYmCLI.exe test  [device_index]      Send a test report (A + left stick right)
  */
 
@@ -25,6 +28,9 @@
 #include <cstdlib>
 #include <cstddef>
 #include <cstring>
+#include <cmath>
+#include <limits>
+#include <vector>
 
 #include "DeviceHelper.h"
 
@@ -221,6 +227,9 @@ static void PrintUsage()
 #if GAYM_ENABLE_DEV_DIAGNOSTICS
     printf("  GaYmCLI jitter <min_us> <max_us>   Set timing jitter range (dev builds only)\n");
     printf("  GaYmCLI jitter off                 Disable jitter (dev builds only)\n");
+    printf("  GaYmCLI rate parent <hz>           Tune lower pacing toward a parent cadence target\n");
+    printf("  GaYmCLI rate upper <hz>            Tune lower pacing toward an upper cadence target\n");
+    printf("  GaYmCLI rate off                   Disable lower pacing experiment\n");
 #endif
     printf("  GaYmCLI test  [device_index]       Inject a test report\n");
     printf("  GaYmCLI report [device_index] <btn0> <btn1> <dpad> <lt> <rt> <lx> <ly> <rx> <ry>\n");
@@ -694,6 +703,277 @@ static bool ParseLongArgument(const char* text, long minValue, long maxValue, lo
     *value = parsed;
     return true;
 }
+
+#if GAYM_ENABLE_DEV_DIAGNOSTICS
+enum class RateExperimentTarget {
+    Parent,
+    Upper,
+};
+
+struct RateCandidateMeasurement {
+    ULONG intervalUs = 0;
+    double parentHz = 0.0;
+    double upperHz = 0.0;
+    double errorHz = 0.0;
+};
+
+static const char* RateExperimentTargetName(RateExperimentTarget target)
+{
+    switch (target) {
+    case RateExperimentTarget::Parent:
+        return "parent";
+    case RateExperimentTarget::Upper:
+    default:
+        return "upper";
+    }
+}
+
+static bool ParseRateExperimentTarget(const char* text, RateExperimentTarget* target)
+{
+    if (_stricmp(text, "parent") == 0 || _stricmp(text, "lower") == 0) {
+        *target = RateExperimentTarget::Parent;
+        return true;
+    }
+
+    if (_stricmp(text, "upper") == 0) {
+        *target = RateExperimentTarget::Upper;
+        return true;
+    }
+
+    return false;
+}
+
+static bool ApplyLowerPacingIntervalUs(ULONG intervalUs)
+{
+    HANDLE device = OpenGaYmDeviceForTarget(GaYmControlTarget::Lower, 0);
+    GAYM_JITTER_CONFIG jitterConfig = {};
+    bool success;
+
+    if (device == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    if (intervalUs != 0) {
+        jitterConfig.Enabled = TRUE;
+        jitterConfig.MinDelayUs = intervalUs;
+        jitterConfig.MaxDelayUs = intervalUs;
+    }
+
+    success = SetJitter(device, &jitterConfig);
+    CloseHandle(device);
+    return success;
+}
+
+static bool MeasureCadenceHzForTarget(
+    GaYmControlTarget target,
+    int deviceIndex,
+    DWORD sampleMs,
+    double* rateHz)
+{
+    HANDLE device;
+    GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE startRuntime = {};
+    GAYM_QUERY_RUNTIME_COUNTERS_RESPONSE endRuntime = {};
+    ULONG startCount;
+    ULONG endCount;
+
+    *rateHz = 0.0;
+    device = OpenGaYmDeviceForTarget(target, deviceIndex);
+    if (device == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    if (!QueryRuntimeCounters(device, &startRuntime)) {
+        CloseHandle(device);
+        return false;
+    }
+
+    Sleep(sampleMs);
+
+    if (!QueryRuntimeCounters(device, &endRuntime)) {
+        CloseHandle(device);
+        return false;
+    }
+
+    CloseHandle(device);
+
+    if (target == GaYmControlTarget::Upper) {
+        startCount = startRuntime.Payload.DeviceControlRequestsSeen;
+        endCount = endRuntime.Payload.DeviceControlRequestsSeen;
+    } else {
+        startCount = startRuntime.Payload.InternalDeviceControlRequestsSeen;
+        endCount = endRuntime.Payload.InternalDeviceControlRequestsSeen;
+    }
+
+    *rateHz = (static_cast<double>(endCount - startCount) * 1000.0) /
+        static_cast<double>(sampleMs);
+    return true;
+}
+
+static bool MeasureParentAndUpperCadenceHz(
+    DWORD sampleMs,
+    int deviceIndex,
+    double* parentHz,
+    double* upperHz)
+{
+    if (!MeasureCadenceHzForTarget(GaYmControlTarget::Lower, 0, sampleMs, parentHz)) {
+        return false;
+    }
+
+    if (!MeasureCadenceHzForTarget(GaYmControlTarget::Upper, deviceIndex, sampleMs, upperHz)) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool EvaluateRateCandidate(
+    ULONG intervalUs,
+    RateExperimentTarget target,
+    double desiredRateHz,
+    DWORD settleMs,
+    DWORD sampleMs,
+    int deviceIndex,
+    RateCandidateMeasurement* measurement)
+{
+    if (!ApplyLowerPacingIntervalUs(intervalUs)) {
+        return false;
+    }
+
+    Sleep(settleMs);
+
+    measurement->intervalUs = intervalUs;
+    if (!MeasureParentAndUpperCadenceHz(sampleMs, deviceIndex, &measurement->parentHz, &measurement->upperHz)) {
+        return false;
+    }
+
+    measurement->errorHz = std::fabs(
+        (target == RateExperimentTarget::Parent ? measurement->parentHz : measurement->upperHz) -
+        desiredRateHz);
+
+    std::printf(
+        "  interval=%4lu us -> parent=%6.1f Hz upper=%6.1f Hz\n",
+        measurement->intervalUs,
+        measurement->parentHz,
+        measurement->upperHz);
+    return true;
+}
+
+static void CmdRate(int argc, char* argv[])
+{
+    constexpr DWORD kSettleMs = 200;
+    constexpr DWORD kSampleMs = 1500;
+    const ULONG coarseCandidates[] = { 0, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000 };
+    RateExperimentTarget target = RateExperimentTarget::Upper;
+    long requestedRateHz = 0;
+    long deviceIndex = 0;
+
+    if (argc < 3) {
+        PrintUsage();
+        return;
+    }
+
+    if (_stricmp(argv[2], "off") == 0) {
+        if (!ApplyLowerPacingIntervalUs(0)) {
+            std::fprintf(stderr, "Failed to disable lower pacing experiment (error %lu).\n", GetLastError());
+            return;
+        }
+
+        std::printf("Lower pacing experiment disabled.\n");
+        return;
+    }
+
+    if (argc < 4 || !ParseRateExperimentTarget(argv[2], &target)) {
+        PrintUsage();
+        return;
+    }
+
+    if (!ParseLongArgument(argv[3], 1, 500, &requestedRateHz)) {
+        std::fprintf(stderr, "Invalid target rate: %s\n", argv[3]);
+        return;
+    }
+
+    if (argc >= 5 && !ParseLongArgument(argv[4], 0, 64, &deviceIndex)) {
+        std::fprintf(stderr, "Invalid device index: %s\n", argv[4]);
+        return;
+    }
+
+    std::printf(
+        "Tuning lower pacing toward %s target %.1f Hz (upper device index %ld)\n",
+        RateExperimentTargetName(target),
+        static_cast<double>(requestedRateHz),
+        deviceIndex);
+
+    std::vector<RateCandidateMeasurement> measurements;
+    measurements.reserve(24);
+
+    RateCandidateMeasurement bestMeasurement = {};
+    bestMeasurement.errorHz = std::numeric_limits<double>::max();
+
+    auto evaluateCandidate = [&](ULONG intervalUs) -> bool {
+        for (const RateCandidateMeasurement& existing : measurements) {
+            if (existing.intervalUs == intervalUs) {
+                return true;
+            }
+        }
+
+        RateCandidateMeasurement measurement = {};
+        if (!EvaluateRateCandidate(
+                intervalUs,
+                target,
+                static_cast<double>(requestedRateHz),
+                kSettleMs,
+                kSampleMs,
+                static_cast<int>(deviceIndex),
+                &measurement)) {
+            return false;
+        }
+
+        measurements.push_back(measurement);
+        if (measurement.errorHz < bestMeasurement.errorHz) {
+            bestMeasurement = measurement;
+        }
+        return true;
+    };
+
+    for (ULONG intervalUs : coarseCandidates) {
+        if (!evaluateCandidate(intervalUs)) {
+            std::fprintf(stderr, "Rate sweep failed during coarse pass (error %lu).\n", GetLastError());
+            ApplyLowerPacingIntervalUs(0);
+            return;
+        }
+    }
+
+    const ULONG refineStart = (bestMeasurement.intervalUs > 500) ? (bestMeasurement.intervalUs - 500) : 0;
+    const ULONG refineEnd = (bestMeasurement.intervalUs + 500 > 5000) ? 5000 : (bestMeasurement.intervalUs + 500);
+    for (ULONG intervalUs = refineStart; intervalUs <= refineEnd; intervalUs += 100) {
+        if (!evaluateCandidate(intervalUs)) {
+            std::fprintf(stderr, "Rate sweep failed during refine pass (error %lu).\n", GetLastError());
+            ApplyLowerPacingIntervalUs(0);
+            return;
+        }
+    }
+
+    if (!ApplyLowerPacingIntervalUs(bestMeasurement.intervalUs)) {
+        std::fprintf(stderr, "Failed to apply best lower pacing interval (error %lu).\n", GetLastError());
+        return;
+    }
+
+    std::printf(
+        "\nBest match: interval=%lu us -> parent=%.1f Hz upper=%.1f Hz (target %s %.1f Hz)\n",
+        bestMeasurement.intervalUs,
+        bestMeasurement.parentHz,
+        bestMeasurement.upperHz,
+        RateExperimentTargetName(target),
+        static_cast<double>(requestedRateHz));
+}
+#else
+static void CmdRate(int argc, char* argv[])
+{
+    UNREFERENCED_PARAMETER(argc);
+    UNREFERENCED_PARAMETER(argv);
+    std::fprintf(stderr, "The rate command is not available in the release bundle profile.\n");
+}
+#endif
 
 static void PrintPollInterval(ULONG intervalMs)
 {
@@ -1210,6 +1490,7 @@ int main(int argc, char* argv[])
     else if (_stricmp(cmd, "on")     == 0) CmdOverride(argc, argv, true);
     else if (_stricmp(cmd, "off")    == 0) CmdOverride(argc, argv, false);
     else if (_stricmp(cmd, "jitter") == 0) CmdJitter(argc, argv);
+    else if (_stricmp(cmd, "rate")   == 0) CmdRate(argc, argv);
     else if (_stricmp(cmd, "test")   == 0) CmdTest(argc, argv);
     else if (_stricmp(cmd, "report") == 0) CmdReport(argc, argv);
     else {

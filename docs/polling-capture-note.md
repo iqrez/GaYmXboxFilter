@@ -341,3 +341,32 @@ Interpretation:
 - the shaped scheduler produces a smoother upper-path transfer curve than the old fixed-stall experiment
 - `2000-5000 us` now gives a progressive drop in upper cadence instead of a mostly flat response followed by a single cliff at `5000 us`
 - the lower parent cadence still bends later than the upper path, which implies the parent-side pacing is visible upstream before it becomes obvious in the parent counters themselves
+
+## Explicit Target-Rate Validation
+
+Follow-up user-mode experiment with the new `GaYmCLI rate ...` command:
+
+```text
+GaYmCLI rate parent 245
+GaYmCLI rate upper 150
+```
+
+Observed during the rate search:
+
+| Requested target | Best lower interval | Measured parent | Measured upper |
+| --- | ---: | ---: | ---: |
+| `parent 245 Hz` | `4000 us` | `243.3 Hz` | `262.0 Hz` |
+| `upper 150 Hz`  | `3700 us` | `249.3 Hz` | `151.3 Hz` |
+
+Direct cadence probe after the `upper 150` run:
+
+- lower parent cadence remained near baseline:
+  - roughly `124-128` requests per `500 ms`
+- upper cadence remained close to the requested target:
+  - roughly `70-89` completions per `500 ms`
+
+Interpretation:
+
+- the new target-rate layer is useful as a user-mode experiment
+- upper-target tuning is now materially easier than manual interval guessing
+- the gap between nearly flat lower counters and a clearly changed upper cadence confirms that the parent-path pacing effect is real but not fully captured by the lower counter deltas alone

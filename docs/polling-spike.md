@@ -278,6 +278,49 @@ Current best read:
 - the composite parent is still the only lower path that has shown causal control over upper-visible polling behavior
 - this is now strong evidence that any real hardware-polling research should stay on the composite-parent side, not the USB `02FF` child or the supported HID-child product line
 
+## Explicit Target-Rate Experiment
+
+The next step was to move one level above raw microsecond intervals and ask for a desired rate directly.
+
+Implementation:
+
+- kept the kernel surface unchanged
+- added a user-mode `GaYmCLI rate ...` experiment on top of the shaped lower pacing knob
+- the CLI now:
+  - applies a fixed lower interval candidate through `IOCTL_GAYM_SET_JITTER`
+  - measures the resulting lower and upper cadence from the live runtime counters
+  - searches for the closest match to a requested parent or upper target rate
+  - leaves the best interval applied at the end
+
+Supported commands in maintainer builds:
+
+- `GaYmCLI rate parent <hz>`
+- `GaYmCLI rate upper <hz>`
+- `GaYmCLI rate off`
+
+Observed validation results:
+
+- `GaYmCLI rate parent 245`
+  - best interval: `4000 us`
+  - measured during sweep: parent `243.3 Hz`, upper `262.0 Hz`
+- `GaYmCLI rate upper 150`
+  - best interval: `3700 us`
+  - measured during sweep: parent `249.3 Hz`, upper `151.3 Hz`
+
+Direct probe after the `upper 150` run:
+
+- lower parent cadence stayed close to baseline:
+  - roughly `124-128` internal-control requests per `500 ms`
+- upper cadence stayed near the requested target:
+  - roughly `70-89` device-control completions per `500 ms`
+  - approximately `140-178 Hz`
+
+Interpretation:
+
+- the explicit target-rate layer works better as a user-mode experiment than as another kernel ABI change
+- asking for an upper target is now more practical than guessing a raw interval manually
+- the lower parent counters still do not fully explain the upper-path response, which reinforces that the parent-side pacing effect propagates upstream in a non-trivial way
+
 ## Guardrails
 
 - Keep the stable product line untouched.

@@ -75,10 +75,12 @@ static VOID UpperCompleteReadWithInjectedReport(
     _In_ WDFREQUEST Request)
 {
     GAYM_REPORT reportSnapshot;
+    GAYM_REPORT parsedReport;
     PVOID buffer;
     size_t bufferSize;
     ULONG bytesWritten;
     KIRQL oldIrql;
+    NTSTATUS parseStatus;
     NTSTATUS status;
 
     status = UpperResolveReadBuffer(Request, &buffer, &bufferSize);
@@ -100,12 +102,16 @@ static VOID UpperCompleteReadWithInjectedReport(
         (ULONG)bufferSize,
         &bytesWritten);
     if (NT_SUCCESS(status)) {
-        KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-        Context->LastObservedReport = reportSnapshot;
-        Context->HasObservedReport = TRUE;
-        Context->ReportsObserved++;
-        KeReleaseSpinLock(&Context->StateLock, oldIrql);
-        UpperTraceRecord((ULONG)IOCTL_GAYM_INJECT_REPORT, (ULONG)status);
+        parseStatus = UpperDeviceParseNativeReport(Context, (const UCHAR*)buffer, bytesWritten, &parsedReport);
+        if (NT_SUCCESS(parseStatus)) {
+            KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+            Context->LastObservedReport = parsedReport;
+            Context->HasObservedReport = TRUE;
+            Context->ReportsObserved++;
+            KeReleaseSpinLock(&Context->StateLock, oldIrql);
+        }
+
+        UpperTraceRecord((ULONG)IOCTL_GAYM_INJECT_REPORT, (ULONG)parseStatus);
     }
 
     WdfRequestCompleteWithInformation(Request, status, (ULONG_PTR)bytesWritten);

@@ -56,34 +56,45 @@ static NTSTATUS UpperStoreInjectedReport(
 
     KeAcquireSpinLock(&Context->StateLock, &oldIrql);
     RtlCopyMemory(&Context->LastInjectedReport, report, sizeof(*report));
-    RtlCopyMemory(&Context->LastObservedReport, report, sizeof(*report));
     Context->HasInjectedReport = TRUE;
-    Context->HasObservedReport = TRUE;
     Context->ReportsInjected++;
     Context->WriteRequestsSeen++;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
     return STATUS_SUCCESS;
 }
 
-static BOOLEAN UpperTryRecoverStaleWriterLocked(_Inout_ PUPPER_DEVICE_CONTEXT Context)
+static BOOLEAN UpperIoctlRequiresFileObject(_In_ ULONG IoControlCode)
 {
-    PFILE_OBJECT fileObject;
-
-    fileObject = (PFILE_OBJECT)Context->WriterFileObject;
-    if (!Context->WriterSessionHeld || fileObject == NULL) {
+    switch (IoControlCode) {
+    case IOCTL_GAYM_ACQUIRE_WRITER_SESSION:
+    case IOCTL_GAYM_RELEASE_WRITER_SESSION:
+    case IOCTL_GAYM_OVERRIDE_ON:
+    case IOCTL_GAYM_OVERRIDE_OFF:
+    case IOCTL_GAYM_INJECT_REPORT:
+        return TRUE;
+    default:
         return FALSE;
     }
+}
 
-    if (ObReferenceObjectSafe(fileObject)) {
-        ObDereferenceObject(fileObject);
-        return FALSE;
+VOID UpperDeviceResetWriterState(
+    _Inout_ PUPPER_DEVICE_CONTEXT Context,
+    _In_opt_ WDFFILEOBJECT ExpectedFileObject)
+{
+    KIRQL oldIrql;
+
+    if (Context == NULL) {
+        return;
     }
 
-    Context->WriterFileObject = NULL;
-    Context->WriterSessionHeld = FALSE;
-    Context->OverrideEnabled = FALSE;
-    Context->HasInjectedReport = FALSE;
-    return TRUE;
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    if (ExpectedFileObject == NULL || Context->WriterFileObject == ExpectedFileObject) {
+        Context->WriterFileObject = NULL;
+        Context->WriterSessionHeld = FALSE;
+        Context->OverrideEnabled = FALSE;
+        Context->HasInjectedReport = FALSE;
+    }
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
 }
 
 NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQUEST Request, _In_ ULONG IoControlCode)
@@ -93,13 +104,13 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
     WDFFILEOBJECT requestFileObject;
 
     requestFileObject = WdfRequestGetFileObject(Request);
+    if (requestFileObject == NULL && UpperIoctlRequiresFileObject(IoControlCode)) {
+        return STATUS_INVALID_HANDLE;
+    }
 
     switch (IoControlCode) {
     case IOCTL_GAYM_ACQUIRE_WRITER_SESSION:
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-        if (Context->WriterSessionHeld && Context->WriterFileObject != requestFileObject) {
-            (VOID)UpperTryRecoverStaleWriterLocked(Context);
-        }
         if (Context->WriterSessionHeld && Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
             return STATUS_DEVICE_BUSY;

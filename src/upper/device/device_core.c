@@ -17,7 +17,6 @@ static VOID UpperEvtFileCleanup(_In_ WDFFILEOBJECT FileObject)
 {
     PUPPER_CONTROL_DEVICE_CONTEXT controlContext;
     PUPPER_DEVICE_CONTEXT filterContext;
-    KIRQL oldIrql;
 
     controlContext = UpperControlGetContext(WdfFileObjectGetDevice(FileObject));
     filterContext = controlContext->FilterContext;
@@ -25,14 +24,7 @@ static VOID UpperEvtFileCleanup(_In_ WDFFILEOBJECT FileObject)
         return;
     }
 
-    KeAcquireSpinLock(&filterContext->StateLock, &oldIrql);
-    if (filterContext->WriterFileObject == FileObject) {
-        filterContext->WriterFileObject = NULL;
-        filterContext->WriterSessionHeld = FALSE;
-        filterContext->OverrideEnabled = FALSE;
-        filterContext->HasInjectedReport = FALSE;
-    }
-    KeReleaseSpinLock(&filterContext->StateLock, oldIrql);
+    UpperDeviceResetWriterState(filterContext, FileObject);
 }
 
 static NTSTATUS UpperCreateQueue(_In_ WDFDEVICE Device, _Out_ WDFQUEUE* Queue)

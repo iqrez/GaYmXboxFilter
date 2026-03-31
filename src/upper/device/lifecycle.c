@@ -16,11 +16,8 @@ NTSTATUS GaYmXInputFilterEvtD0Exit(_In_ WDFDEVICE Device, _In_ WDF_POWER_DEVICE_
     PUPPER_DEVICE_CONTEXT context = UpperGetContext(Device);
 
     context->IsInD0 = FALSE;
-    context->WriterFileObject = NULL;
-    context->OverrideEnabled = FALSE;
-    context->WriterSessionHeld = FALSE;
-    context->HasInjectedReport = FALSE;
     context->HasObservedReport = FALSE;
+    UpperDeviceResetWriterState(context, NULL);
     return STATUS_SUCCESS;
 }
 
@@ -30,10 +27,7 @@ VOID GaYmXInputFilterEvtSurpriseRemoval(_In_ WDFDEVICE Device)
 
     context->IsAttached = FALSE;
     context->IsInD0 = FALSE;
-    context->WriterFileObject = NULL;
-    context->OverrideEnabled = FALSE;
-    context->WriterSessionHeld = FALSE;
-    context->HasInjectedReport = FALSE;
     context->HasObservedReport = FALSE;
+    UpperDeviceResetWriterState(context, NULL);
     UpperDeviceShutdownControlDevice();
 }

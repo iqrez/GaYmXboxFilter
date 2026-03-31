@@ -89,7 +89,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     GAYM_REPORT reportSnapshot;
     BOOLEAN writerHeld;
     BOOLEAN overrideEnabled;
-    BOOLEAN hasInjectedReport;
     BOOLEAN hasObservedReport;
     BOOLEAN isAttached;
     BOOLEAN isInD0;
@@ -107,7 +106,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     KeAcquireSpinLock(&Context->StateLock, &oldIrql);
     writerHeld = Context->WriterSessionHeld;
     overrideEnabled = Context->OverrideEnabled;
-    hasInjectedReport = Context->HasInjectedReport;
     hasObservedReport = Context->HasObservedReport;
     isAttached = Context->IsAttached;
     isInD0 = Context->IsInD0;
@@ -115,9 +113,7 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     reportsObserved = Context->ReportsObserved;
     readRequestsSeen = Context->ReadRequestsSeen;
 
-    if (overrideEnabled && hasInjectedReport) {
-        reportSnapshot = Context->LastInjectedReport;
-    } else if (hasObservedReport) {
+    if (hasObservedReport) {
         reportSnapshot = Context->LastObservedReport;
     }
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
@@ -141,13 +137,13 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     if (overrideEnabled) {
         Context->LastObservation.StatusFlags |= GAYM_STATUS_OVERRIDE_ACTIVE;
     }
-    if (!(hasObservedReport || (overrideEnabled && hasInjectedReport))) {
+    if (!hasObservedReport) {
         Context->LastObservation.StatusFlags |= GAYM_STATUS_OBSERVATION_SYNTHETIC;
     }
     Context->LastObservation.LastObservedSequence = (ULONGLONG)readRequestsSeen;
     Context->LastObservation.LastInjectedSequence = reportsInjected;
     Context->LastObservation.TimestampQpc = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
-    if (hasObservedReport || (overrideEnabled && hasInjectedReport)) {
+    if (hasObservedReport) {
         UpperSetSemanticButtonsFromLegacyReport(&reportSnapshot, &Context->LastObservation.Buttons);
         Context->LastObservation.LeftStickX = reportSnapshot.ThumbLeftX;
         Context->LastObservation.LeftStickY = reportSnapshot.ThumbLeftY;

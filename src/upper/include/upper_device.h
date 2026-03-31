@@ -35,6 +35,9 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(UPPER_DEVICE_CONTEXT, UpperGetContext)
 NTSTATUS UpperDeviceInitialize(_In_ WDFDEVICE Device);
 NTSTATUS UpperDeviceCreateControlDevice(_In_ WDFDEVICE FilterDevice);
 VOID UpperDeviceShutdownControlDevice(VOID);
+VOID UpperDeviceResetWriterState(
+    _Inout_ PUPPER_DEVICE_CONTEXT Context,
+    _In_opt_ WDFFILEOBJECT ExpectedFileObject);
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL UpperEvtIoDeviceControl;
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL UpperEvtIoInternalDeviceControl;
 EVT_WDF_IO_QUEUE_IO_READ UpperEvtIoRead;

@@ -41,7 +41,7 @@ function Get-PublishedNamesFromInf {
         throw "pnputil failed while enumerating installed drivers."
     }
 
-    $matches = New-Object System.Collections.Generic.List[string]
+    $publishedNameMatches = New-Object System.Collections.Generic.List[string]
     $currentPublishedName = $null
     $currentOriginalName = $null
 
@@ -58,7 +58,7 @@ function Get-PublishedNamesFromInf {
 
         if ([string]::IsNullOrWhiteSpace($line)) {
             if ($currentPublishedName -and $currentOriginalName -and ($currentOriginalName -ieq $fileName)) {
-                $matches.Add($currentPublishedName) | Out-Null
+                $publishedNameMatches.Add($currentPublishedName) | Out-Null
             }
 
             $currentPublishedName = $null
@@ -67,10 +67,10 @@ function Get-PublishedNamesFromInf {
     }
 
     if ($currentPublishedName -and $currentOriginalName -and ($currentOriginalName -ieq $fileName)) {
-        $matches.Add($currentPublishedName) | Out-Null
+        $publishedNameMatches.Add($currentPublishedName) | Out-Null
     }
 
-    return $matches.ToArray()
+    return $publishedNameMatches.ToArray()
 }
 
 function Remove-DriverPackage {
@@ -91,12 +91,33 @@ function Remove-DriverPackage {
     foreach ($publishedName in $publishedNames) {
         Write-Host "Removing $Label package: $publishedName"
         $deleteOutput = & $pnputil /delete-driver $publishedName /uninstall /force 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw ("pnputil failed to delete $Label package $publishedName.`n" + ($deleteOutput -join [Environment]::NewLine))
+        $deleteExitCode = $LASTEXITCODE
+        $deleteText = $deleteOutput -join [Environment]::NewLine
+        $rebootRequired = $deleteText -match 'System reboot is needed to complete uninstall operations!' -or
+            $deleteText -match 'System reboot is needed to complete unconfiguration operations!'
+        $deleteSucceeded = $deleteText -match 'Driver package deleted successfully\.'
+
+        if ($deleteExitCode -ne 0 -and -not ($deleteSucceeded -and $rebootRequired)) {
+            throw ("pnputil failed to delete $Label package $publishedName.`n" + $deleteText)
         }
 
-        Write-Host ($deleteOutput -join [Environment]::NewLine)
+        Write-Host $deleteText
     }
+}
+
+function Test-InstanceRequiresReboot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetInstanceId
+    )
+
+    $propertyOutput = & $pnputil /enum-devices /instanceid $TargetInstanceId /properties 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        return $true
+    }
+
+    $propertyText = $propertyOutput -join [Environment]::NewLine
+    return $propertyText -match 'DEVPKEY_Device_IsRebootRequired \[Boolean\]:\s*\r?\n\s*TRUE'
 }
 
 function Test-LiveStackRecovery {
@@ -183,6 +204,11 @@ if ($InstanceId) {
         Write-Host "Restart output:"
         Write-Host ($restartOutput -join [Environment]::NewLine)
         Write-Host ''
+    }
+
+    if (Test-InstanceRequiresReboot -TargetInstanceId $InstanceId) {
+        Write-Warning "Windows still reports that $InstanceId requires a reboot after uninstall. Reboot once, reconnect the controller, and rerun uninstall-driver.ps1 if you need live stack recovery verification."
+        return
     }
 }
 

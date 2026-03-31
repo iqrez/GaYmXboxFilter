@@ -145,7 +145,7 @@ if errorlevel 1 (
     popd
     exit /b 1
 )
-link.exe /nologo /OUT:XInputCheck.exe "%OBJ_OUT%\XInputCheck.obj" xinput.lib
+link.exe /nologo /OUT:XInputCheck.exe "%OBJ_OUT%\XInputCheck.obj" "%CLIENT_OUT%\gaym_client.lib" xinput.lib
 if errorlevel 1 (
     echo.
     echo FAILED: XInputCheck.exe

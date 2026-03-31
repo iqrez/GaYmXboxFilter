@@ -3,6 +3,7 @@ setlocal
 title GaYm Xbox 02FF Build + Test
 set "SRC=%~dp0"
 set "SHARED_INC=%~dp0..\..\shared"
+set "CLIENT_OUT=%~dp0..\..\..\out\dev\client"
 set "OUT=%~dp0..\..\..\out\dev\tools"
 
 if not exist "%OUT%" mkdir "%OUT%"
@@ -25,10 +26,14 @@ echo  OK
 
 REM --- Build XInputCheck ---
 echo [2/3] Building XInputCheck.exe ...
-cl /EHsc /D_CRT_SECURE_NO_WARNINGS /I"%SRC%" /Fe:XInputCheck.exe "%SRC%\XInputCheck.cpp" /link xinput.lib >nul 2>&1
+if not exist "%CLIENT_OUT%\gaym_client.lib" (
+    call "%~dp0..\..\..\build_client.bat" Debug
+    if %errorlevel% neq 0 goto :fail
+)
+cl /EHsc /D_CRT_SECURE_NO_WARNINGS /I"%SRC%" /Fe:XInputCheck.exe "%SRC%\XInputCheck.cpp" /link "%CLIENT_OUT%\gaym_client.lib" xinput.lib >nul 2>&1
 if %errorlevel% neq 0 (
     echo  FAILED. Retrying with full output:
-    cl /EHsc /D_CRT_SECURE_NO_WARNINGS /I"%SRC%" /Fe:XInputCheck.exe "%SRC%\XInputCheck.cpp" /link xinput.lib
+    cl /EHsc /D_CRT_SECURE_NO_WARNINGS /I"%SRC%" /Fe:XInputCheck.exe "%SRC%\XInputCheck.cpp" /link "%CLIENT_OUT%\gaym_client.lib" xinput.lib
     goto :fail
 )
 echo  OK
@@ -84,15 +89,15 @@ goto :done
 
 :xinput
 echo.
-echo Polling XInput for 30 seconds...
+echo Polling XInput continuously until any key is pressed...
 echo.
-XInputCheck.exe
+XInputCheck.exe --continuous
 goto :done
 
 :sidebyside
 echo.
 echo Launching XInputCheck in a new window...
-start "XInput Monitor" cmd /c "XInputCheck.exe & pause"
+start "XInput Monitor" cmd /c "XInputCheck.exe --continuous"
 timeout /t 2 /nobreak >nul
 echo Launching MinimalTestFeeder --scripted ...
 echo.

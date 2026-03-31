@@ -24,6 +24,8 @@ Current meaning:
   verifies sustained producer-driven semantic injection through `gaym_client`
 - `XInputCheck.exe`
   is the authoritative interactive XInput observation monitor on this machine
+  and now runs continuously by default until any key is pressed. It also
+  accepts `--duration <seconds>` and `--port <0-3>`.
 - `AutoVerify.exe`
   is the authoritative bounded automated verifier for this repo state and now
   reports explicit modes:
@@ -57,7 +59,7 @@ reliable against the current live stack.
 1. Run `scripts\smoke-test.ps1`
 2. Run `GaYmCLI.exe status`
 3. Run `GaYmCLI.exe test 0` or start `GaYmFeeder.exe`
-4. Watch `XInputCheck.exe` for packet and state changes
+4. Watch `XInputCheck.exe` for semantic XInput changes and override state
 5. Run `AutoVerify.exe`
 
 `smoke-test.ps1` now performs a preflight stale-state recovery check and will
@@ -69,7 +71,8 @@ Expected success signals:
 - `GaYmCLI.exe status` shows the supported Xbox `02FF` adapter
 - `GaYmCLI.exe test 0` completes without cleanup errors
 - `GaYmFeeder.exe` can hold and drive the stack
-- `XInputCheck.exe` shows injected stick, trigger, and button changes
+- `XInputCheck.exe` shows injected stick, trigger, and button changes with
+  readable labels and live polling rate
 - `AutoVerify.exe` returns `PASS`
 
 ## Failure Interpretation

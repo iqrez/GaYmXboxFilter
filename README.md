@@ -76,7 +76,9 @@ Current tool status:
 
 - `GaYmCLI.exe` is a supported operator and maintainer control tool
 - `GaYmFeeder.exe` is a supported producer-side exerciser
-- `XInputCheck.exe` is the supported XInput observation monitor
+- `XInputCheck.exe` is the supported XInput observation monitor; it runs
+  continuously by default, shows human-readable button/state changes, and
+  accepts `--duration <seconds>` plus `--port <0-3>`
 - `AutoVerify.exe` is the supported bounded regression tool and reports result
   modes such as `xinput_override_pass`, `raw_hid_pass`, and
   `counter_fallback_pass`

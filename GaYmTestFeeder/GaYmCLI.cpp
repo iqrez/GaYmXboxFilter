@@ -36,6 +36,8 @@
 
 #pragma comment(lib, "xinput.lib")
 
+static constexpr ULONG GAYM_EXPECTED_FILTER_BUILD_STAMP = 0x20260330u;
+
 static const char* TracePhaseName(ULONG phase)
 {
     switch (phase) {
@@ -1803,7 +1805,7 @@ static bool ValidateDeviceInfoSnapshot(
             return false;
         }
 
-        if (info.DriverBuildStamp != 0x20260327u) {
+        if (info.DriverBuildStamp != GAYM_EXPECTED_FILTER_BUILD_STAMP) {
             std::snprintf(reason, reasonCount, "unexpected build stamp 0x%08lX", info.DriverBuildStamp);
             return false;
         }

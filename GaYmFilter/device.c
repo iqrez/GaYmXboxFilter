@@ -24,7 +24,7 @@
 
 #define GAYM_FILTER_WDM_POOL_TAG 'fwYG'
 #define GAYM_FILTER_QUERY_LAYOUT_VERSION  5u
-#define GAYM_FILTER_BUILD_STAMP           0x20260327u
+#define GAYM_FILTER_BUILD_STAMP           0x20260330u
 
 typedef struct _GAYM_WDM_IRP_CONTEXT {
     PDEVICE_CONTEXT DeviceContext;
@@ -35,6 +35,8 @@ typedef struct _GAYM_WDM_IRP_CONTEXT {
     UCHAR InputSampleLength;
     UCHAR InputSample[GAYM_TRACE_SAMPLE_BYTES];
 } GAYM_WDM_IRP_CONTEXT, *PGAYM_WDM_IRP_CONTEXT;
+
+static NTSTATUS GaYmValidateNoInputBuffer(_In_ WDFREQUEST Request);
 
 static VOID GaYmSetControlFilterContext(
     _In_ PCONTROL_DEVICE_CONTEXT ControlContext,

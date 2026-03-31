@@ -23,14 +23,20 @@ static VOID UpperBuildDeviceInfo(
     _In_ PUPPER_DEVICE_CONTEXT Context,
     _Out_ PGAYM_DEVICE_INFO DeviceInfo)
 {
+    BOOLEAN hasSupportedTarget;
     KIRQL oldIrql;
 
     RtlZeroMemory(DeviceInfo, sizeof(*DeviceInfo));
 
     KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-    DeviceInfo->DeviceType = Context->IsAttached ? GAYM_DEVICE_XBOX_ONE : GAYM_DEVICE_UNKNOWN;
-    DeviceInfo->VendorId = Context->IsAttached ? 0x045E : 0;
-    DeviceInfo->ProductId = Context->IsAttached ? 0x02FF : 0;
+    hasSupportedTarget =
+        Context->IsAttached &&
+        Context->IsInD0 &&
+        Context->VendorId == 0x045E &&
+        Context->ProductId == 0x02FF;
+    DeviceInfo->DeviceType = hasSupportedTarget ? GAYM_DEVICE_XBOX_ONE : GAYM_DEVICE_UNKNOWN;
+    DeviceInfo->VendorId = Context->IsInD0 ? Context->VendorId : 0;
+    DeviceInfo->ProductId = Context->IsInD0 ? Context->ProductId : 0;
     DeviceInfo->OverrideActive = Context->OverrideEnabled;
     DeviceInfo->ReportsSent = Context->ReportsInjected;
     DeviceInfo->ReadRequestsSeen = (ULONG)Context->ReadRequestsSeen;
@@ -97,6 +103,21 @@ VOID UpperDeviceResetWriterState(
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
 }
 
+static BOOLEAN UpperHasSupportedTarget(_In_ PUPPER_DEVICE_CONTEXT Context)
+{
+    BOOLEAN hasSupportedTarget;
+    KIRQL oldIrql;
+
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    hasSupportedTarget =
+        Context->IsAttached &&
+        Context->IsInD0 &&
+        Context->VendorId == 0x045E &&
+        Context->ProductId == 0x02FF;
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
+    return hasSupportedTarget;
+}
+
 NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQUEST Request, _In_ ULONG IoControlCode)
 {
     NTSTATUS status;
@@ -110,6 +131,9 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
 
     switch (IoControlCode) {
     case IOCTL_GAYM_ACQUIRE_WRITER_SESSION:
+        if (!UpperHasSupportedTarget(Context)) {
+            return STATUS_DEVICE_NOT_READY;
+        }
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
         if (Context->WriterSessionHeld && Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
@@ -132,6 +156,9 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
         return STATUS_SUCCESS;
     case IOCTL_GAYM_OVERRIDE_ON:
+        if (!UpperHasSupportedTarget(Context)) {
+            return STATUS_DEVICE_NOT_READY;
+        }
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
         if (!Context->WriterSessionHeld || Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
@@ -150,6 +177,9 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
         return STATUS_SUCCESS;
     case IOCTL_GAYM_INJECT_REPORT:
+        if (!UpperHasSupportedTarget(Context)) {
+            return STATUS_DEVICE_NOT_READY;
+        }
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
         if (!Context->WriterSessionHeld || Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);

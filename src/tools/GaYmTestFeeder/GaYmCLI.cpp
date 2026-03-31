@@ -87,8 +87,8 @@ static int CmdStatus()
     if (devices.empty()) {
         printf("No supported Xbox 02FF adapter found.\n");
         printf("  The package may be staged but not attached to the live device stack.\n");
-        printf("  Run attach_filter.ps1 as Administrator to attach the lower filter to the USB HID stack.\n");
-        printf("  Maintainer diagnostics remain available through \\\\.\\GaYmFilterCtl when attached.\n");
+        printf("  Run scripts\\install-driver.ps1 -Configuration Release as Administrator to bind the staged upper/lower packages to the live stack.\n");
+        printf("  The authoritative operator path is \\\\.\\GaYmXInputFilterCtl; \\\\.\\GaYmFilterCtl remains maintainer diagnostics only when attached.\n");
         return 0;
     }
 

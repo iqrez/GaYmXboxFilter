@@ -23,11 +23,11 @@ surface.
 - operator control path: `\\.\GaYmXInputFilterCtl`
 - maintainer diagnostic path: `\\.\GaYmFilterCtl`
 
-The operator path is the intended mutation surface for normal use. The
-maintainer path exists so diagnostics can remain adapter-specific without
-leaking into the producer contract. Control ownership is still transitional
-until the upper driver is fully implemented, so do not describe the operator
-path as finished product behavior yet.
+The operator path is the authoritative mutation and semantic observation
+surface for normal use. The maintainer path exists so diagnostics can remain
+adapter-specific without leaking into the producer contract. Producer-facing
+tools should prefer the upper path first. The lower path remains a
+compatibility and diagnostics escape hatch only.
 
 ## Repo Rule
 

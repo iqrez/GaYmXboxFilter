@@ -10,15 +10,17 @@ boundary is semantic:
   controller stack
 - `gaym_client` is the supported producer-facing API boundary
 
-The current repo state reflects the shared/client split:
+The current repo state reflects the finished upper-driver catch-up:
 
 - `gaym_client` exists under `src/client/`
 - `GAYM_OBSERVATION` exists in the shared ABI
-- `out/dev/client/` is the staged client output
-- control ownership is still transitional until the upper driver is fully
-  implemented
-- live verification currently relies on `GaYmCLI`, `GaYmFeeder`,
-  `XInputCheck`, and `AutoVerify`
+- the upper driver is the authoritative control and semantic observation path
+  for the supported Xbox `02FF` stack
+- the lower driver remains maintainer diagnostics and native observation
+  fallback only
+- `scripts/` is the supported build, install, verify, and packaging workflow
+- live verification relies on `GaYmCLI`, `GaYmFeeder`, `XInputCheck`, and
+  `AutoVerify`
 
 The supported MVP target is narrow:
 
@@ -32,14 +34,14 @@ The supported MVP target is narrow:
 ## Current Shape
 
 The repository is mid-migration toward the SPEC-2 layout, with the
-shared/client split now landed.
+shared/client split and upper-driver authority now landed.
 
-- `src/lower/` contains the migrated lower-driver prototype
+- `src/upper/` contains the authoritative upper-driver implementation
+- `src/lower/` contains the lower-driver observation and diagnostic fallback
 - `src/shared/` contains the shared ABI, including semantic observation
-- `src/tools/GaYmTestFeeder/` contains the migrated prototype tools
+- `src/tools/` contains the migrated prototype tool sources
 - `src/client/` contains `gaym_client`
-- `out/dev/client/` is the staged client output
-- `src/upper/` is the intended authoritative upper-driver home
+- `scripts/` contains the supported operator workflow
 - `archive/` contains paused or unsupported experiments only
 
 ## What Must Be True
@@ -49,9 +51,10 @@ shared/client split now landed.
 - only one active writer may own control mutation in v1
 - multiple semantic observation readers are allowed
 - override stays off by default
-- control ownership remains transitional until the upper driver is fully
-  implemented
-- override is cleared on remove, surprise removal, power transition, and uninstall
+- the upper driver is the authoritative control and semantic observation owner
+- the lower path remains maintainer diagnostics fallback only
+- override is cleared on cleanup, remove, surprise removal, power transition,
+  and uninstall
 - malformed or ABI-incompatible requests are rejected
 
 ## Repo Layout
@@ -87,7 +90,7 @@ Current tool status:
 
 ## Next Steps
 
-1. Finish extracting the shared ABI and client boundary.
-2. Turn `src/upper/` into the real upper-driver implementation.
-3. Keep lower-driver diagnostics adapter-specific and maintainers-only.
-4. Replace transitional root scripts with the script-first workflow.
+1. Expand automated regression around writer conflict and PnP/power edges.
+2. Continue splitting large lower-driver and tool modules into stable units.
+3. Retire the remaining lower-control compatibility path once diagnostics no
+   longer depend on it.

@@ -16,11 +16,15 @@ The supported v1 platform slice is:
 
 Current implementation state:
 
-- `gaym_client` exists under `src/client/`
-- `GAYM_OBSERVATION` is present in the shared ABI
-- `out/dev/client/` is the staged client output
-- upper-driver control ownership is still transitional until the upper driver
-  implementation lands
+- `gaym_client` owns the stable producer-facing API
+- the upper driver owns writer sessions, override state, semantic injection,
+  primary device info, and semantic observation for the supported target
+- semantic observation is materialized from parsed completed reads on the
+  upper path rather than mirrored directly from injection input
+- the lower driver remains native observation and maintainer diagnostics
+  fallback only
+- `scripts/` is the supported Debug/Release build, install, verify, and
+  packaging workflow
 
 ## Supported Architecture
 
@@ -29,12 +33,13 @@ Current implementation state:
 Responsibilities:
 
 - Producer apps decide what semantic control state should be sent.
-- `gaym_client` owns ABI negotiation, writer-session handling, and semantic
-  control/observation plumbing.
-- The upper driver is the intended owner of authoritative override state,
-  writer enforcement, and semantic-to-native injection, but that ownership is
-  still transitional until the implementation lands.
-- The lower driver owns native-path observation and maintainer diagnostics.
+- `gaym_client` owns ABI negotiation, handle selection, writer-session
+  handling, and semantic control/observation plumbing.
+- The upper driver owns authoritative override state, writer enforcement,
+  semantic-to-native injection, XInput read replacement, primary device info,
+  and semantic observation on the supported target.
+- The lower driver owns native-path observation and adapter-specific
+  diagnostics that remain outside the producer contract.
 - Shared ABI headers own protocol/versioning and the portable semantic shapes.
 
 ## Source-of-Truth Layout
@@ -45,28 +50,24 @@ Responsibilities:
     driver.c
     device/
       device_core.c
-      writer_session.c
       ioctl_dispatch.c
       read_intercept.c
       report_translate.c
-      semantic_observation.c
       lifecycle.c
       trace.c
     include/
+      driver.h
       upper_device.h
       upper_trace.h
   /lower
     driver.c
-    device/
-      device_core.c
-      ioctl_dispatch.c
-      native_capture.c
-      report_parse.c
-      lifecycle.c
-      trace.c
+    device.c
+    devices.c
     include/
-      lower_device.h
-      lower_trace.h
+      device.h
+      devices.h
+      driver.h
+      logging.h
   /shared
     protocol.h
     ioctl.h
@@ -81,10 +82,10 @@ Responsibilities:
     gaym_client_observation.c
     gaym_client_diag.c
   /tools
+    /GaYmTestFeeder
     /cli
     /feeder
     /verify
-    /playback
     /capture
 /scripts
 /docs
@@ -145,20 +146,17 @@ Owns:
 - authoritative writer-session enforcement for control mutation
 - semantic `GAYM_REPORT` to native packet translation
 - XInput-facing read replacement / completion logic
-- minimal semantic observation materialization
-- upper-path safety reset on PnP/power transitions
-- primary status query surface
-
-Status:
-
-- implementation remains in progress
-- control ownership is still transitional
+- minimal semantic observation materialization from parsed completed reads
+- upper-path safety reset on file cleanup, PnP, and power transitions
+- primary status and device-info query surface
+- attach-time hardening so the device only reports Xbox `02FF` identity when
+  the live target actually matches the supported adapter
 
 Does not own:
 
-- long-term packet sniffing as a primary function
 - broad unsupported hardware enumeration logic
 - producer-specific policy logic
+- maintainer-only raw diagnostic APIs
 
 ### Lower driver
 
@@ -169,6 +167,7 @@ Owns:
 - optional native-to-semantic parse support used by observation logic
 - lower trace snapshots
 - native-path regression support for `joy.cpl` / WinMM validation
+- fallback-only maintainer diagnostics for unsupported IOCTLs
 
 Does not own:
 
@@ -242,18 +241,29 @@ Rules:
 
 ## Writer Ownership
 
-v1 uses strict single-writer ownership.
+v1 uses strict single-writer ownership on the upper control path.
 
 Rules:
 
 - a producer must acquire a writer session before override enable and
   injection
 - inject requests without writer ownership fail
-- writer ownership is revoked on device removal, surprise removal, or explicit
-  release
-- semantic observation may still be read by non-writers
-- until the upper driver is fully implemented, the control path remains
-  transitional and should not be treated as finished product behavior
+- writer ownership is revoked on file cleanup, device removal, surprise
+  removal, D0 exit, or explicit release
+- semantic observation and device-info queries may still be read by non-writers
+- the lower path remains diagnostic fallback only and is not the producer
+  contract
+
+## Live Validation Rule
+
+When upper or lower driver binaries change and the live machine is part of
+validation:
+
+- bump both upper and lower INF `DriverVer` values before staging/installing
+- use the scripted install path under `scripts/`
+- do not sign off until the active HID instance is bound to the newest staged
+  `oem*.inf` pair
+- do not sign off while `DEVPKEY_Device_IsRebootRequired` is `TRUE`
 
 ## Migration Rule
 

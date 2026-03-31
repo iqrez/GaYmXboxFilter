@@ -5,7 +5,7 @@ NTSTATUS GaYmXInputFilterEvtD0Entry(_In_ WDFDEVICE Device, _In_ WDF_POWER_DEVICE
     UNREFERENCED_PARAMETER(PreviousState);
     PUPPER_DEVICE_CONTEXT context = UpperGetContext(Device);
 
-    context->IsAttached = TRUE;
+    UpperDeviceRefreshAttachmentState(context);
     context->IsInD0 = TRUE;
     return UpperDeviceCreateControlDevice(Device);
 }
@@ -27,6 +27,8 @@ VOID GaYmXInputFilterEvtSurpriseRemoval(_In_ WDFDEVICE Device)
 
     context->IsAttached = FALSE;
     context->IsInD0 = FALSE;
+    context->VendorId = 0;
+    context->ProductId = 0;
     context->HasObservedReport = FALSE;
     UpperDeviceResetWriterState(context, NULL);
     UpperDeviceShutdownControlDevice();

@@ -92,9 +92,12 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     BOOLEAN hasObservedReport;
     BOOLEAN isAttached;
     BOOLEAN isInD0;
+    BOOLEAN hasSupportedTarget;
     ULONG reportsInjected;
     ULONG reportsObserved;
     LONG readRequestsSeen;
+    USHORT vendorId;
+    USHORT productId;
     KIRQL oldIrql;
 
     if (Context == NULL) {
@@ -109,9 +112,16 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     hasObservedReport = Context->HasObservedReport;
     isAttached = Context->IsAttached;
     isInD0 = Context->IsInD0;
+    vendorId = Context->VendorId;
+    productId = Context->ProductId;
     reportsInjected = Context->ReportsInjected;
     reportsObserved = Context->ReportsObserved;
     readRequestsSeen = Context->ReadRequestsSeen;
+    hasSupportedTarget =
+        isAttached &&
+        isInD0 &&
+        vendorId == 0x045E &&
+        productId == 0x02FF;
 
     if (hasObservedReport) {
         reportSnapshot = Context->LastObservedReport;
@@ -125,12 +135,12 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     Context->LastObservation.Header.Size = (ULONG)sizeof(GAYM_OBSERVATION_V1);
     Context->LastObservation.Header.Flags = GAYM_PROTOCOL_FLAG_NONE;
     Context->LastObservation.Header.RequestId = 0;
-    Context->LastObservation.AdapterFamily = isAttached ? GAYM_ADAPTER_FAMILY_XBOX_02FF : GAYM_ADAPTER_FAMILY_UNKNOWN;
+    Context->LastObservation.AdapterFamily = hasSupportedTarget ? GAYM_ADAPTER_FAMILY_XBOX_02FF : GAYM_ADAPTER_FAMILY_UNKNOWN;
     Context->LastObservation.CapabilityFlags =
         GAYM_CAPABILITY_SEMANTIC_CONTROL |
         GAYM_CAPABILITY_SEMANTIC_OBSERVATION |
         GAYM_CAPABILITY_SINGLE_WRITER_REQUIRED;
-    Context->LastObservation.StatusFlags = isAttached ? GAYM_STATUS_DEVICE_PRESENT : 0;
+    Context->LastObservation.StatusFlags = hasSupportedTarget ? GAYM_STATUS_DEVICE_PRESENT : 0;
     if (writerHeld) {
         Context->LastObservation.StatusFlags |= GAYM_STATUS_WRITER_HELD;
     }

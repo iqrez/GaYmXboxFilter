@@ -35,7 +35,8 @@ Reason: the public producer contract remains semantic and portable.
 
 ## Current State Note
 
-The shared/client split is landed: `gaym_client` exists, `GAYM_OBSERVATION`
-is in the shared ABI, and `out/dev/client/` is staged. Control ownership is
-still transitional until the upper driver is implemented, so the operator
-path remains planned rather than finished.
+The shared/client split is landed, `gaym_client` is the supported producer
+boundary, and the upper driver is the authoritative control and semantic
+observation path for the supported Xbox `02FF` stack. The lower path remains
+maintainer diagnostics fallback only, and live validation is expected to run
+through the scripted workflow under `scripts/`.

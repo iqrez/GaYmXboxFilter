@@ -13,6 +13,104 @@ DECLARE_CONST_UNICODE_STRING(g_LowerCtlDeviceName, L"\\Device\\GaYmFilterCtl");
 
 static WDFDEVICE g_UpperControlDevice;
 
+static BOOLEAN UpperTryParseHexWord(_In_reads_(4) PCWSTR Text, _Out_ PUSHORT Value)
+{
+    USHORT parsedValue;
+    USHORT nibble;
+    ULONG index;
+
+    parsedValue = 0;
+    for (index = 0; index < 4; ++index) {
+        WCHAR ch;
+
+        ch = Text[index];
+        if (ch >= L'0' && ch <= L'9') {
+            nibble = (USHORT)(ch - L'0');
+        } else if (ch >= L'A' && ch <= L'F') {
+            nibble = (USHORT)(10 + (ch - L'A'));
+        } else if (ch >= L'a' && ch <= L'f') {
+            nibble = (USHORT)(10 + (ch - L'a'));
+        } else {
+            return FALSE;
+        }
+
+        parsedValue = (USHORT)((parsedValue << 4) | nibble);
+    }
+
+    *Value = parsedValue;
+    return TRUE;
+}
+
+static VOID UpperParseHardwareId(
+    _In_opt_z_ PCWSTR HardwareId,
+    _Out_ PUSHORT VendorId,
+    _Out_ PUSHORT ProductId)
+{
+    PCWSTR cursor;
+
+    *VendorId = 0;
+    *ProductId = 0;
+
+    if (HardwareId == NULL) {
+        return;
+    }
+
+    for (cursor = HardwareId; *cursor != L'\0'; ++cursor) {
+        if (cursor[0] == L'V' && cursor[1] == L'I' && cursor[2] == L'D' && cursor[3] == L'_' &&
+            UpperTryParseHexWord(cursor + 4, VendorId)) {
+            break;
+        }
+    }
+
+    for (cursor = HardwareId; *cursor != L'\0'; ++cursor) {
+        if (cursor[0] == L'P' && cursor[1] == L'I' && cursor[2] == L'D' && cursor[3] == L'_' &&
+            UpperTryParseHexWord(cursor + 4, ProductId)) {
+            break;
+        }
+    }
+}
+
+VOID UpperDeviceRefreshAttachmentState(_Inout_ PUPPER_DEVICE_CONTEXT Context)
+{
+    PDEVICE_OBJECT physicalDeviceObject;
+    WCHAR hardwareIds[512];
+    ULONG resultLength;
+    NTSTATUS status;
+    KIRQL oldIrql;
+    USHORT vendorId;
+    USHORT productId;
+    BOOLEAN isSupportedTarget;
+
+    if (Context == NULL || Context->Device == NULL) {
+        return;
+    }
+
+    vendorId = 0;
+    productId = 0;
+    isSupportedTarget = FALSE;
+    physicalDeviceObject = WdfDeviceWdmGetPhysicalDevice(Context->Device);
+    if (physicalDeviceObject != NULL) {
+        RtlZeroMemory(hardwareIds, sizeof(hardwareIds));
+        resultLength = 0;
+        status = IoGetDeviceProperty(
+            physicalDeviceObject,
+            DevicePropertyHardwareID,
+            sizeof(hardwareIds),
+            hardwareIds,
+            &resultLength);
+        if (NT_SUCCESS(status)) {
+            UpperParseHardwareId(hardwareIds, &vendorId, &productId);
+            isSupportedTarget = (vendorId == 0x045E && productId == 0x02FF);
+        }
+    }
+
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    Context->VendorId = vendorId;
+    Context->ProductId = productId;
+    Context->IsAttached = isSupportedTarget;
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
+}
+
 static VOID UpperEvtFileCleanup(_In_ WDFFILEOBJECT FileObject)
 {
     PUPPER_CONTROL_DEVICE_CONTEXT controlContext;
@@ -115,7 +213,9 @@ NTSTATUS UpperDeviceInitialize(_In_ WDFDEVICE Device)
     context->Device = Device;
     context->LowerTarget = WdfDeviceGetIoTarget(Device);
     context->WriterFileObject = NULL;
-    context->IsAttached = TRUE;
+    context->VendorId = 0;
+    context->ProductId = 0;
+    context->IsAttached = FALSE;
     context->IsInD0 = FALSE;
     context->OverrideEnabled = FALSE;
     context->WriterSessionHeld = FALSE;

@@ -18,6 +18,11 @@ static HANDLE gaym_client_open_path_handle(LPCWSTR path)
         NULL);
 }
 
+static HANDLE gaym_client_open_upper_control_handle(void)
+{
+    return gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_UPPER_W);
+}
+
 HANDLE gaym_client_open_diagnostic_control_handle(void)
 {
     return gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_DIAGNOSTIC_W);
@@ -271,11 +276,29 @@ BOOL gaym_client_open_supported_adapter_session(int index, PGAYM_CLIENT_SESSION 
 
 BOOL gaym_client_query_device_info_handle(HANDLE device, PGAYM_DEVICE_INFO info)
 {
+    HANDLE upperHandle;
     HANDLE fallbackHandle;
 
     if (info == NULL) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
+    }
+
+    upperHandle = gaym_client_open_upper_control_handle();
+    if (upperHandle != INVALID_HANDLE_VALUE) {
+        if (gaym_client_send_ioctl(
+                upperHandle,
+                (DWORD)IOCTL_GAYM_QUERY_DEVICE,
+                NULL,
+                0,
+                info,
+                sizeof(*info),
+                NULL)) {
+            CloseHandle(upperHandle);
+            return TRUE;
+        }
+
+        CloseHandle(upperHandle);
     }
 
     if (gaym_client_send_ioctl(

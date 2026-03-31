@@ -10,6 +10,8 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     WDFIOTARGET LowerTarget;
     WDFQUEUE DefaultQueue;
     KSPIN_LOCK StateLock;
+    USHORT VendorId;
+    USHORT ProductId;
     WDFFILEOBJECT WriterFileObject;
     BOOLEAN WriterSessionHeld;
     BOOLEAN OverrideEnabled;
@@ -38,6 +40,7 @@ VOID UpperDeviceShutdownControlDevice(VOID);
 VOID UpperDeviceResetWriterState(
     _Inout_ PUPPER_DEVICE_CONTEXT Context,
     _In_opt_ WDFFILEOBJECT ExpectedFileObject);
+VOID UpperDeviceRefreshAttachmentState(_Inout_ PUPPER_DEVICE_CONTEXT Context);
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL UpperEvtIoDeviceControl;
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL UpperEvtIoInternalDeviceControl;
 EVT_WDF_IO_QUEUE_IO_READ UpperEvtIoRead;

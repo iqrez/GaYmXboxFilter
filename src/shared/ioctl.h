@@ -80,6 +80,9 @@ typedef struct _GAYM_DEVICE_INFO {
     ULONG DeviceControlRequestsSeen;
     ULONG InternalDeviceControlRequestsSeen;
     ULONG WriteRequestsSeen;
+    ULONG LastRequestType;
+    ULONG LastRequestInputLength;
+    ULONG LastRequestOutputLength;
 } GAYM_DEVICE_INFO, *PGAYM_DEVICE_INFO;
 
 typedef struct _GAYM_JITTER_CONFIG {

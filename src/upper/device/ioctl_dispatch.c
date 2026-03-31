@@ -48,6 +48,9 @@ static VOID UpperBuildDeviceInfo(
     DeviceInfo->InternalDeviceControlRequestsSeen = (ULONG)Context->InternalDeviceControlRequestsSeen;
     DeviceInfo->WriteRequestsSeen = (ULONG)Context->WriteRequestsSeen;
     DeviceInfo->LastInterceptedIoctl = (ULONG)Context->LastInterceptedIoctl;
+    DeviceInfo->LastRequestType = (ULONG)Context->LastRequestType;
+    DeviceInfo->LastRequestInputLength = (ULONG)Context->LastRequestInputLength;
+    DeviceInfo->LastRequestOutputLength = (ULONG)Context->LastRequestOutputLength;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
 }
 

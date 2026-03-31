@@ -72,6 +72,13 @@ static BOOLEAN UpperRequestIsExactXInputStateRequest(
         params.Parameters.DeviceIoControl.OutputBufferLength == sizeof(UPPER_XINPUT_STATE);
 }
 
+static BOOLEAN UpperRequestIsAppFacingXInputRequest(
+    _In_ WDFREQUEST Request,
+    _In_ ULONG IoControlCode)
+{
+    return UpperRequestIsExactXInputStateRequest(Request, IoControlCode);
+}
+
 static NTSTATUS UpperResolveOutputBufferFromIrp(
     _In_ WDFREQUEST Request,
     _In_ size_t MinimumLength,
@@ -376,6 +383,8 @@ static VOID UpperCompleteRequestWithXInputState(
     RtlZeroMemory(buffer, bufferSize);
     RtlCopyMemory(buffer, &state, sizeof(state));
 
+    InterlockedIncrement(&Context->CompletedInputRequests);
+
     eventCode = (IoControlCode == IRP_MJ_READ) ?
         UPPER_TRACE_EVENT_OVERRIDE_XINPUT_READ :
         UPPER_TRACE_EVENT_OVERRIDE_XINPUT_IOCTL;
@@ -586,7 +595,6 @@ static VOID UpperEvtInputRequestCompletion(
     BOOLEAN overrideEnabled;
     BOOLEAN hasInjectedReport;
     BOOLEAN isNativeHidIoctl;
-    BOOLEAN isXInputIoctl;
     PVOID buffer;
     size_t bufferSize;
     KIRQL oldIrql;
@@ -610,7 +618,6 @@ static VOID UpperEvtInputRequestCompletion(
         (requestParams.Type == WdfRequestTypeDeviceControl ||
          requestParams.Type == WdfRequestTypeDeviceControlInternal) &&
         UpperShouldInterceptReadIoctl(ioControlCode);
-    isXInputIoctl = UpperRequestIsExactXInputStateRequest(Request, ioControlCode);
 
     KeAcquireSpinLock(&upperContext->StateLock, &oldIrql);
     overrideEnabled = upperContext->OverrideEnabled;
@@ -618,15 +625,7 @@ static VOID UpperEvtInputRequestCompletion(
     KeReleaseSpinLock(&upperContext->StateLock, oldIrql);
 
     if (overrideEnabled && hasInjectedReport) {
-        if (requestParams.Type == WdfRequestTypeRead || isNativeHidIoctl) {
-            UpperCompleteRequestWithXInputState(
-                upperContext,
-                Request,
-                (requestParams.Type == WdfRequestTypeRead) ? IRP_MJ_READ : ioControlCode);
-            return;
-        }
-
-        if (isXInputIoctl) {
+        if (UpperRequestIsAppFacingXInputRequest(Request, ioControlCode)) {
             UpperCompleteRequestWithXInputState(
                 upperContext,
                 Request,
@@ -654,24 +653,39 @@ static VOID UpperHandleReadRequest(
 {
     BOOLEAN overrideEnabled;
     BOOLEAN hasInjectedReport;
+    WDF_REQUEST_PARAMETERS requestParams;
     KIRQL oldIrql;
     NTSTATUS status;
+
+    WDF_REQUEST_PARAMETERS_INIT(&requestParams);
+    WdfRequestGetParameters(Request, &requestParams);
 
     KeAcquireSpinLock(&Context->StateLock, &oldIrql);
     overrideEnabled = Context->OverrideEnabled;
     hasInjectedReport = Context->HasInjectedReport;
     Context->LastInterceptedIoctl = (LONG)IoControlCode;
+    Context->LastRequestType = (LONG)requestParams.Type;
+    if (requestParams.Type == WdfRequestTypeRead) {
+        Context->LastRequestInputLength = (LONG)requestParams.Parameters.Read.Length;
+        Context->LastRequestOutputLength = (LONG)requestParams.Parameters.Read.Length;
+    } else if (requestParams.Type == WdfRequestTypeDeviceControl ||
+        requestParams.Type == WdfRequestTypeDeviceControlInternal) {
+        Context->LastRequestInputLength = (LONG)requestParams.Parameters.DeviceIoControl.InputBufferLength;
+        Context->LastRequestOutputLength = (LONG)requestParams.Parameters.DeviceIoControl.OutputBufferLength;
+    } else {
+        Context->LastRequestInputLength = 0;
+        Context->LastRequestOutputLength = 0;
+    }
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
 
-    if (overrideEnabled) {
-        if (IoControlCode == IRP_MJ_READ || UpperShouldInterceptReadIoctl(IoControlCode)) {
+    if (UpperRequestIsExactXInputStateRequest(Request, IoControlCode)) {
+        if (overrideEnabled) {
             if (hasInjectedReport) {
                 UpperCompleteRequestWithXInputState(Context, Request, IoControlCode);
             } else {
+                UpperTraceRecord(UPPER_TRACE_EVENT_OVERRIDE_XINPUT_IOCTL, STATUS_PENDING);
                 UpperQueuePendingReadRequest(Context, Request);
             }
-        } else if (hasInjectedReport) {
-            UpperCompleteRequestWithXInputState(Context, Request, IoControlCode);
         } else {
             status = UpperForwardRequestToLower(Context, Request);
             UpperTraceRecord(UPPER_TRACE_EVENT_FORWARD_READ_REQUEST, status);
@@ -681,6 +695,18 @@ static VOID UpperHandleReadRequest(
             if (!NT_SUCCESS(status)) {
                 WdfRequestComplete(Request, status);
             }
+        }
+        return;
+    }
+
+    if (IoControlCode == IRP_MJ_READ || UpperShouldInterceptReadIoctl(IoControlCode)) {
+        status = UpperForwardRequestToLower(Context, Request);
+        UpperTraceRecord(UPPER_TRACE_EVENT_FORWARD_READ_REQUEST, status);
+        if (NT_SUCCESS(status)) {
+            InterlockedIncrement(&Context->ForwardedInputRequests);
+        }
+        if (!NT_SUCCESS(status)) {
+            WdfRequestComplete(Request, status);
         }
         return;
     }

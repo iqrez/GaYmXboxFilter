@@ -32,6 +32,9 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     volatile LONG InternalDeviceControlRequestsSeen;
     volatile LONG WriteRequestsSeen;
     volatile LONG LastInterceptedIoctl;
+    volatile LONG LastRequestType;
+    volatile LONG LastRequestInputLength;
+    volatile LONG LastRequestOutputLength;
     GAYM_DEVICE_INFO LastDeviceInfo;
     GAYM_OBSERVATION_V1 LastObservation;
     GAYM_REPORT LastInjectedReport;

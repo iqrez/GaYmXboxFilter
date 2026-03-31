@@ -114,6 +114,20 @@ static int CmdStatus()
                 info.VendorId, info.ProductId,
                 info.OverrideActive ? "ON" : "OFF",
                 info.ReportsSent);
+            printf("    Counters: pending=%lu queued=%lu completed=%lu forwarded=%lu read=%lu devctl=%lu internal=%lu write=%lu lastIoctl=0x%08lX\n",
+                info.PendingInputRequests,
+                info.QueuedInputRequests,
+                info.CompletedInputRequests,
+                info.ForwardedInputRequests,
+                info.ReadRequestsSeen,
+                info.DeviceControlRequestsSeen,
+                info.InternalDeviceControlRequestsSeen,
+                info.WriteRequestsSeen,
+                info.LastInterceptedIoctl);
+            printf("    Last request: type=%lu in=%lu out=%lu\n",
+                info.LastRequestType,
+                info.LastRequestInputLength,
+                info.LastRequestOutputLength);
             GAYM_OBSERVATION_V1 observation = {};
             if (QueryObservation(h, &observation)) {
                 PrintObservation(observation);

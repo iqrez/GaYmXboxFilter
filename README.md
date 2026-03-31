@@ -78,7 +78,7 @@ Current tool status:
 - `GaYmFeeder.exe` is a supported producer-side exerciser
 - `XInputCheck.exe` is the supported XInput observation monitor
 - `AutoVerify.exe` is the supported bounded regression tool and reports result
-  modes such as `xinput_direct_pass`, `raw_hid_pass`, and
+  modes such as `xinput_override_pass`, `raw_hid_pass`, and
   `counter_fallback_pass`
 - `XInputAutoVerify.exe` is diagnostic-only and is not staged as part of the
   curated dev toolset

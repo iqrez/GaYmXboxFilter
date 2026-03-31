@@ -65,7 +65,7 @@ struct CounterObservation {
 
 enum class VerificationMode {
     None,
-    XInputDirect,
+    XInputOverride,
     RawHid,
     CounterFallback
 };
@@ -515,8 +515,8 @@ static std::wstring GetVerificationStatePath()
 static const char* VerificationModeToLabel(VerificationMode mode, bool passed)
 {
     switch (mode) {
-    case VerificationMode::XInputDirect:
-        return passed ? "xinput_direct_pass" : "xinput_direct_fail";
+    case VerificationMode::XInputOverride:
+        return passed ? "xinput_override_pass" : "xinput_override_fail";
     case VerificationMode::RawHid:
         return passed ? "raw_hid_pass" : "raw_hid_fail";
     case VerificationMode::CounterFallback:
@@ -663,7 +663,7 @@ int main()
 
         if (xinputAllPassed && xinputObservedAnyChange) {
             allPassed = true;
-            verificationMode = VerificationMode::XInputDirect;
+            verificationMode = VerificationMode::XInputOverride;
         } else {
             std::printf("XInput was visible but did not reflect injected state reliably.\n");
             allPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));

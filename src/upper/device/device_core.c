@@ -140,6 +140,19 @@ static NTSTATUS UpperCreateQueue(_In_ WDFDEVICE Device, _Out_ WDFQUEUE* Queue)
     return WdfIoQueueCreate(Device, &queueConfig, &queueAttributes, Queue);
 }
 
+static NTSTATUS UpperCreatePendingReadQueue(_In_ WDFDEVICE Device, _Out_ WDFQUEUE* Queue)
+{
+    WDF_IO_QUEUE_CONFIG queueConfig;
+    WDF_OBJECT_ATTRIBUTES queueAttributes;
+
+    WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchManual);
+
+    WDF_OBJECT_ATTRIBUTES_INIT(&queueAttributes);
+    queueAttributes.ParentObject = Device;
+
+    return WdfIoQueueCreate(Device, &queueConfig, &queueAttributes, Queue);
+}
+
 static VOID UpperEvtCtlIoDeviceControl(
     _In_ WDFQUEUE Queue,
     _In_ WDFREQUEST Request,
@@ -197,6 +210,11 @@ NTSTATUS GaYmXInputFilterEvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_
         return status;
     }
 
+    status = UpperCreatePendingReadQueue(device, &UpperGetContext(device)->PendingReadQueue);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
     status = UpperDeviceCreateControlDevice(device);
     if (!NT_SUCCESS(status)) {
         return status;
@@ -212,6 +230,7 @@ NTSTATUS UpperDeviceInitialize(_In_ WDFDEVICE Device)
     context->Device = Device;
     context->LowerTarget = WdfDeviceGetIoTarget(Device);
     context->WriterFileObject = NULL;
+    context->PendingReadQueue = NULL;
     context->VendorId = 0;
     context->ProductId = 0;
     context->IsAttached = FALSE;
@@ -220,12 +239,19 @@ NTSTATUS UpperDeviceInitialize(_In_ WDFDEVICE Device)
     context->WriterSessionHeld = FALSE;
     context->HasInjectedReport = FALSE;
     context->HasObservedReport = FALSE;
+    context->PendingInputRequests = 0;
+    context->QueuedInputRequests = 0;
+    context->CompletedInputRequests = 0;
+    context->ForwardedInputRequests = 0;
     KeInitializeSpinLock(&context->StateLock);
     RtlZeroMemory(&context->JitterConfig, sizeof(context->JitterConfig));
     RtlZeroMemory(&context->LastInjectedReport, sizeof(context->LastInjectedReport));
     RtlZeroMemory(&context->LastObservedReport, sizeof(context->LastObservedReport));
+    RtlZeroMemory(&context->LastPresentedXInputReport, sizeof(context->LastPresentedXInputReport));
     RtlZeroMemory(&context->LastDeviceInfo, sizeof(context->LastDeviceInfo));
     RtlZeroMemory(&context->LastObservation, sizeof(context->LastObservation));
+    context->XInputPacketNumber = 0;
+    context->HasPresentedXInputReport = FALSE;
     return STATUS_SUCCESS;
 }
 

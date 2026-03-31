@@ -27,7 +27,7 @@ Current meaning:
 - `AutoVerify.exe`
   is the authoritative bounded automated verifier for this repo state and now
   reports explicit modes:
-  - `xinput_direct_pass`
+  - `xinput_override_pass`
   - `raw_hid_pass`
   - `counter_fallback_pass`
 

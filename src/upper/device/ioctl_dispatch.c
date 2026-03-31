@@ -39,6 +39,10 @@ static VOID UpperBuildDeviceInfo(
     DeviceInfo->ProductId = Context->IsInD0 ? Context->ProductId : 0;
     DeviceInfo->OverrideActive = Context->OverrideEnabled;
     DeviceInfo->ReportsSent = Context->ReportsInjected;
+    DeviceInfo->PendingInputRequests = (ULONG)Context->PendingInputRequests;
+    DeviceInfo->QueuedInputRequests = (ULONG)Context->QueuedInputRequests;
+    DeviceInfo->CompletedInputRequests = (ULONG)Context->CompletedInputRequests;
+    DeviceInfo->ForwardedInputRequests = (ULONG)Context->ForwardedInputRequests;
     DeviceInfo->ReadRequestsSeen = (ULONG)Context->ReadRequestsSeen;
     DeviceInfo->DeviceControlRequestsSeen = (ULONG)Context->DeviceControlRequestsSeen;
     DeviceInfo->InternalDeviceControlRequestsSeen = (ULONG)Context->InternalDeviceControlRequestsSeen;
@@ -66,6 +70,8 @@ static NTSTATUS UpperStoreInjectedReport(
     Context->ReportsInjected++;
     Context->WriteRequestsSeen++;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
+    UpperTraceRecord(UPPER_TRACE_EVENT_INJECT_REPORT_STORED, STATUS_SUCCESS);
+    UpperDeviceCompletePendingReads(Context);
     return STATUS_SUCCESS;
 }
 
@@ -118,8 +124,12 @@ VOID UpperDeviceResetWriterState(
         Context->WriterSessionHeld = FALSE;
         Context->OverrideEnabled = FALSE;
         Context->HasInjectedReport = FALSE;
+        Context->HasPresentedXInputReport = FALSE;
+        Context->XInputPacketNumber = 0;
+        RtlZeroMemory(&Context->LastPresentedXInputReport, sizeof(Context->LastPresentedXInputReport));
     }
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
+    UpperDevicePurgePendingReads(Context);
 }
 
 static BOOLEAN UpperHasSupportedTarget(_In_ PUPPER_DEVICE_CONTEXT Context)
@@ -172,7 +182,11 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         Context->WriterSessionHeld = FALSE;
         Context->OverrideEnabled = FALSE;
         Context->HasInjectedReport = FALSE;
+        Context->HasPresentedXInputReport = FALSE;
+        Context->XInputPacketNumber = 0;
+        RtlZeroMemory(&Context->LastPresentedXInputReport, sizeof(Context->LastPresentedXInputReport));
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
+        UpperDevicePurgePendingReads(Context);
         return STATUS_SUCCESS;
     case IOCTL_GAYM_OVERRIDE_ON:
         if (!UpperHasSupportedTarget(Context)) {
@@ -193,7 +207,11 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
             return STATUS_ACCESS_DENIED;
         }
         Context->OverrideEnabled = FALSE;
+        Context->HasPresentedXInputReport = FALSE;
+        Context->XInputPacketNumber = 0;
+        RtlZeroMemory(&Context->LastPresentedXInputReport, sizeof(Context->LastPresentedXInputReport));
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
+        UpperDevicePurgePendingReads(Context);
         return STATUS_SUCCESS;
     case IOCTL_GAYM_INJECT_REPORT:
         if (!UpperHasSupportedTarget(Context)) {

@@ -1,6 +1,11 @@
 #include "../include/upper_trace.h"
 #include "../include/upper_device.h"
 
+#define UPPER_TRACE_ENTRY_CAPACITY 128
+
+static volatile LONG g_UpperTraceNextIndex = -1;
+static UPPER_TRACE_ENTRY g_UpperTraceEntries[UPPER_TRACE_ENTRY_CAPACITY];
+
 static VOID UpperSetSemanticButtonsFromLegacyReport(
     _In_ const GAYM_REPORT* Report,
     _Out_ PULONG Buttons)
@@ -76,12 +81,20 @@ static VOID UpperSetSemanticButtonsFromLegacyReport(
 
 VOID UpperTraceReset(VOID)
 {
+    RtlZeroMemory(g_UpperTraceEntries, sizeof(g_UpperTraceEntries));
+    InterlockedExchange(&g_UpperTraceNextIndex, -1);
 }
 
 VOID UpperTraceRecord(_In_ ULONG EventCode, _In_ NTSTATUS Status)
 {
-    UNREFERENCED_PARAMETER(EventCode);
-    UNREFERENCED_PARAMETER(Status);
+    LONG entryIndex;
+    PUPPER_TRACE_ENTRY entry;
+
+    entryIndex = InterlockedIncrement(&g_UpperTraceNextIndex);
+    entry = &g_UpperTraceEntries[(ULONG)entryIndex % UPPER_TRACE_ENTRY_CAPACITY];
+    entry->TimestampQpc = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
+    entry->EventCode = EventCode;
+    entry->Status = Status;
 }
 
 VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)

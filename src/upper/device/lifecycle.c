@@ -17,7 +17,10 @@ NTSTATUS GaYmXInputFilterEvtD0Exit(_In_ WDFDEVICE Device, _In_ WDF_POWER_DEVICE_
 
     context->IsInD0 = FALSE;
     context->HasObservedReport = FALSE;
+    context->HasPresentedXInputReport = FALSE;
+    context->XInputPacketNumber = 0;
     UpperDeviceResetWriterState(context, NULL);
+    UpperDevicePurgePendingReads(context);
     return STATUS_SUCCESS;
 }
 
@@ -30,6 +33,9 @@ VOID GaYmXInputFilterEvtSurpriseRemoval(_In_ WDFDEVICE Device)
     context->VendorId = 0;
     context->ProductId = 0;
     context->HasObservedReport = FALSE;
+    context->HasPresentedXInputReport = FALSE;
+    context->XInputPacketNumber = 0;
     UpperDeviceResetWriterState(context, NULL);
+    UpperDevicePurgePendingReads(context);
     UpperDeviceShutdownControlDevice();
 }

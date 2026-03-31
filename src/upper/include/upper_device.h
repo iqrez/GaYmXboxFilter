@@ -9,6 +9,7 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     WDFDEVICE Device;
     WDFIOTARGET LowerTarget;
     WDFQUEUE DefaultQueue;
+    WDFQUEUE PendingReadQueue;
     KSPIN_LOCK StateLock;
     USHORT VendorId;
     USHORT ProductId;
@@ -22,6 +23,10 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     GAYM_JITTER_CONFIG JitterConfig;
     ULONG ReportsInjected;
     ULONG ReportsObserved;
+    volatile LONG PendingInputRequests;
+    volatile LONG QueuedInputRequests;
+    volatile LONG CompletedInputRequests;
+    volatile LONG ForwardedInputRequests;
     volatile LONG ReadRequestsSeen;
     volatile LONG DeviceControlRequestsSeen;
     volatile LONG InternalDeviceControlRequestsSeen;
@@ -31,6 +36,9 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     GAYM_OBSERVATION_V1 LastObservation;
     GAYM_REPORT LastInjectedReport;
     GAYM_REPORT LastObservedReport;
+    GAYM_REPORT LastPresentedXInputReport;
+    ULONG XInputPacketNumber;
+    BOOLEAN HasPresentedXInputReport;
 } UPPER_DEVICE_CONTEXT, *PUPPER_DEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(UPPER_DEVICE_CONTEXT, UpperGetContext)
@@ -61,3 +69,5 @@ NTSTATUS UpperDeviceParseNativeReport(
     _Out_ GAYM_REPORT* Report);
 NTSTATUS UpperDeviceEnsureObservedReport(_In_ PUPPER_DEVICE_CONTEXT Context);
 VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context);
+VOID UpperDeviceCompletePendingReads(_In_ PUPPER_DEVICE_CONTEXT Context);
+VOID UpperDevicePurgePendingReads(_In_ PUPPER_DEVICE_CONTEXT Context);

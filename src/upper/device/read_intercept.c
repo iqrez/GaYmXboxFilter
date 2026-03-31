@@ -7,6 +7,36 @@ static EVT_WDF_REQUEST_COMPLETION_ROUTINE UpperEvtInputRequestCompletion;
 
 #define UPPER_OBSERVATION_TAG 'ObUG'
 
+#define UPPER_XINPUT_GAMEPAD_DPAD_UP        0x0001
+#define UPPER_XINPUT_GAMEPAD_DPAD_DOWN      0x0002
+#define UPPER_XINPUT_GAMEPAD_DPAD_LEFT      0x0004
+#define UPPER_XINPUT_GAMEPAD_DPAD_RIGHT     0x0008
+#define UPPER_XINPUT_GAMEPAD_START          0x0010
+#define UPPER_XINPUT_GAMEPAD_BACK           0x0020
+#define UPPER_XINPUT_GAMEPAD_LEFT_THUMB     0x0040
+#define UPPER_XINPUT_GAMEPAD_RIGHT_THUMB    0x0080
+#define UPPER_XINPUT_GAMEPAD_LEFT_SHOULDER  0x0100
+#define UPPER_XINPUT_GAMEPAD_RIGHT_SHOULDER 0x0200
+#define UPPER_XINPUT_GAMEPAD_A              0x1000
+#define UPPER_XINPUT_GAMEPAD_B              0x2000
+#define UPPER_XINPUT_GAMEPAD_X              0x4000
+#define UPPER_XINPUT_GAMEPAD_Y              0x8000
+
+typedef struct _UPPER_XINPUT_GAMEPAD {
+    USHORT Buttons;
+    UCHAR LeftTrigger;
+    UCHAR RightTrigger;
+    SHORT LeftThumbX;
+    SHORT LeftThumbY;
+    SHORT RightThumbX;
+    SHORT RightThumbY;
+} UPPER_XINPUT_GAMEPAD, *PUPPER_XINPUT_GAMEPAD;
+
+typedef struct _UPPER_XINPUT_STATE {
+    ULONG PacketNumber;
+    UPPER_XINPUT_GAMEPAD Gamepad;
+} UPPER_XINPUT_STATE, *PUPPER_XINPUT_STATE;
+
 static BOOLEAN UpperShouldInterceptReadIoctl(_In_ ULONG IoControlCode)
 {
     switch (IoControlCode) {
@@ -18,12 +48,56 @@ static BOOLEAN UpperShouldInterceptReadIoctl(_In_ ULONG IoControlCode)
     }
 }
 
-static NTSTATUS UpperResolveReadBuffer(
+static BOOLEAN UpperRequestIsPotentialXInputIoctl(
+    _In_ WDFREQUEST Request,
+    _In_ ULONG IoControlCode)
+{
+    WDF_REQUEST_PARAMETERS params;
+
+    if (UpperShouldInterceptReadIoctl(IoControlCode)) {
+        return FALSE;
+    }
+
+    WDF_REQUEST_PARAMETERS_INIT(&params);
+    WdfRequestGetParameters(Request, &params);
+
+    if (params.Type != WdfRequestTypeDeviceControl &&
+        params.Type != WdfRequestTypeDeviceControlInternal) {
+        return FALSE;
+    }
+
+    return params.Parameters.DeviceIoControl.OutputBufferLength >= sizeof(UPPER_XINPUT_STATE);
+}
+
+static NTSTATUS UpperResolveOutputBufferFromIrp(
+    _In_ WDFREQUEST Request,
+    _In_ size_t MinimumLength,
+    _In_ size_t OutputLength,
+    _Outptr_result_bytebuffer_(*BufferSize) PVOID* Buffer,
+    _Out_ size_t* BufferSize)
+{
+    PIRP irp;
+
+    *Buffer = NULL;
+    *BufferSize = 0;
+
+    irp = WdfRequestWdmGetIrp(Request);
+    if (irp == NULL || irp->UserBuffer == NULL || OutputLength < MinimumLength) {
+        return STATUS_INVALID_USER_BUFFER;
+    }
+
+    *Buffer = irp->UserBuffer;
+    *BufferSize = OutputLength;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS UpperResolveXInputBuffer(
     _In_ WDFREQUEST Request,
     _Outptr_result_bytebuffer_(*BufferSize) PVOID* Buffer,
     _Out_ size_t* BufferSize)
 {
     WDF_REQUEST_PARAMETERS params;
+    NTSTATUS status;
 
     *Buffer = NULL;
     *BufferSize = 0;
@@ -32,7 +106,65 @@ static NTSTATUS UpperResolveReadBuffer(
     WdfRequestGetParameters(Request, &params);
 
     if (params.Type == WdfRequestTypeRead) {
-        return WdfRequestRetrieveOutputBuffer(Request, 1, Buffer, BufferSize);
+        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(UPPER_XINPUT_STATE), Buffer, BufferSize);
+        if (NT_SUCCESS(status)) {
+            return status;
+        }
+
+        return UpperResolveOutputBufferFromIrp(
+            Request,
+            sizeof(UPPER_XINPUT_STATE),
+            params.Parameters.Read.Length,
+            Buffer,
+            BufferSize);
+    }
+
+    if (params.Type != WdfRequestTypeDeviceControl &&
+        params.Type != WdfRequestTypeDeviceControlInternal) {
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(UPPER_XINPUT_STATE), Buffer, BufferSize);
+    if (NT_SUCCESS(status)) {
+        return status;
+    }
+
+    return UpperResolveOutputBufferFromIrp(
+        Request,
+        sizeof(UPPER_XINPUT_STATE),
+        params.Parameters.DeviceIoControl.OutputBufferLength,
+        Buffer,
+        BufferSize);
+}
+
+static NTSTATUS UpperResolveNativeReadBuffer(
+    _In_ WDFREQUEST Request,
+    _Outptr_result_bytebuffer_(*BufferSize) PVOID* Buffer,
+    _Out_ size_t* BufferSize)
+{
+    WDF_REQUEST_PARAMETERS params;
+    NTSTATUS status;
+    PIRP irp;
+    PHID_XFER_PACKET packet;
+
+    *Buffer = NULL;
+    *BufferSize = 0;
+
+    WDF_REQUEST_PARAMETERS_INIT(&params);
+    WdfRequestGetParameters(Request, &params);
+
+    if (params.Type == WdfRequestTypeRead) {
+        status = WdfRequestRetrieveOutputBuffer(Request, 1, Buffer, BufferSize);
+        if (NT_SUCCESS(status)) {
+            return status;
+        }
+
+        return UpperResolveOutputBufferFromIrp(
+            Request,
+            1,
+            params.Parameters.Read.Length,
+            Buffer,
+            BufferSize);
     }
 
     if (params.Type != WdfRequestTypeDeviceControl &&
@@ -41,7 +173,7 @@ static NTSTATUS UpperResolveReadBuffer(
     }
 
     if (params.Parameters.DeviceIoControl.IoControlCode == IOCTL_HID_READ_REPORT) {
-        PIRP irp = WdfRequestWdmGetIrp(Request);
+        irp = WdfRequestWdmGetIrp(Request);
         if (irp == NULL || irp->UserBuffer == NULL || params.Parameters.DeviceIoControl.OutputBufferLength == 0) {
             return STATUS_INVALID_USER_BUFFER;
         }
@@ -51,25 +183,201 @@ static NTSTATUS UpperResolveReadBuffer(
         return STATUS_SUCCESS;
     }
 
-    if (params.Parameters.DeviceIoControl.IoControlCode == IOCTL_HID_GET_INPUT_REPORT) {
-        PIRP irp = WdfRequestWdmGetIrp(Request);
-        PHID_XFER_PACKET packet;
-
-        if (irp == NULL) {
-            return STATUS_INVALID_DEVICE_REQUEST;
-        }
-
-        packet = (PHID_XFER_PACKET)irp->UserBuffer;
-        if (packet == NULL || packet->reportBuffer == NULL || packet->reportBufferLen == 0) {
-            return STATUS_INVALID_USER_BUFFER;
-        }
-
-        *Buffer = packet->reportBuffer;
-        *BufferSize = packet->reportBufferLen;
-        return STATUS_SUCCESS;
+    if (params.Parameters.DeviceIoControl.IoControlCode != IOCTL_HID_GET_INPUT_REPORT) {
+        return STATUS_INVALID_DEVICE_REQUEST;
     }
 
-    return STATUS_INVALID_DEVICE_REQUEST;
+    irp = WdfRequestWdmGetIrp(Request);
+    if (irp == NULL) {
+        return STATUS_INVALID_DEVICE_REQUEST;
+    }
+
+    packet = (PHID_XFER_PACKET)irp->UserBuffer;
+    if (packet == NULL || packet->reportBuffer == NULL || packet->reportBufferLen == 0) {
+        return STATUS_INVALID_USER_BUFFER;
+    }
+
+    *Buffer = packet->reportBuffer;
+    *BufferSize = packet->reportBufferLen;
+    return STATUS_SUCCESS;
+}
+
+static VOID UpperQueuePendingReadRequest(
+    _In_ PUPPER_DEVICE_CONTEXT Context,
+    _In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+
+    if (Context == NULL || Context->PendingReadQueue == NULL) {
+        WdfRequestComplete(Request, STATUS_INVALID_DEVICE_STATE);
+        return;
+    }
+
+    InterlockedIncrement(&Context->QueuedInputRequests);
+    InterlockedIncrement(&Context->PendingInputRequests);
+
+    status = WdfRequestForwardToIoQueue(Request, Context->PendingReadQueue);
+    if (!NT_SUCCESS(status)) {
+        InterlockedDecrement(&Context->PendingInputRequests);
+        UpperTraceRecord(UPPER_TRACE_EVENT_BUFFER_RESOLVE_FAILED, status);
+        WdfRequestComplete(Request, status);
+    }
+}
+
+static USHORT UpperBuildXInputButtons(_In_ const GAYM_REPORT* Report)
+{
+    USHORT buttons;
+
+    buttons = 0;
+
+    if (Report->Buttons[0] & GAYM_BTN_A) {
+        buttons |= UPPER_XINPUT_GAMEPAD_A;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_B) {
+        buttons |= UPPER_XINPUT_GAMEPAD_B;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_X) {
+        buttons |= UPPER_XINPUT_GAMEPAD_X;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_Y) {
+        buttons |= UPPER_XINPUT_GAMEPAD_Y;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_LB) {
+        buttons |= UPPER_XINPUT_GAMEPAD_LEFT_SHOULDER;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_RB) {
+        buttons |= UPPER_XINPUT_GAMEPAD_RIGHT_SHOULDER;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_BACK) {
+        buttons |= UPPER_XINPUT_GAMEPAD_BACK;
+    }
+    if (Report->Buttons[0] & GAYM_BTN_START) {
+        buttons |= UPPER_XINPUT_GAMEPAD_START;
+    }
+    if (Report->Buttons[1] & GAYM_BTN_LSTICK) {
+        buttons |= UPPER_XINPUT_GAMEPAD_LEFT_THUMB;
+    }
+    if (Report->Buttons[1] & GAYM_BTN_RSTICK) {
+        buttons |= UPPER_XINPUT_GAMEPAD_RIGHT_THUMB;
+    }
+
+    switch (Report->DPad) {
+    case GAYM_DPAD_UP:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_UP;
+        break;
+    case GAYM_DPAD_UPRIGHT:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_UP | UPPER_XINPUT_GAMEPAD_DPAD_RIGHT;
+        break;
+    case GAYM_DPAD_RIGHT:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_RIGHT;
+        break;
+    case GAYM_DPAD_DOWNRIGHT:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_DOWN | UPPER_XINPUT_GAMEPAD_DPAD_RIGHT;
+        break;
+    case GAYM_DPAD_DOWN:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_DOWN;
+        break;
+    case GAYM_DPAD_DOWNLEFT:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_DOWN | UPPER_XINPUT_GAMEPAD_DPAD_LEFT;
+        break;
+    case GAYM_DPAD_LEFT:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_LEFT;
+        break;
+    case GAYM_DPAD_UPLEFT:
+        buttons |= UPPER_XINPUT_GAMEPAD_DPAD_UP | UPPER_XINPUT_GAMEPAD_DPAD_LEFT;
+        break;
+    default:
+        break;
+    }
+
+    return buttons;
+}
+
+static VOID UpperBuildXInputState(
+    _In_ const GAYM_REPORT* Report,
+    _In_ ULONG PacketNumber,
+    _Out_ PUPPER_XINPUT_STATE State)
+{
+    RtlZeroMemory(State, sizeof(*State));
+    State->PacketNumber = PacketNumber;
+    State->Gamepad.Buttons = UpperBuildXInputButtons(Report);
+    State->Gamepad.LeftTrigger = Report->TriggerLeft;
+    State->Gamepad.RightTrigger = Report->TriggerRight;
+    State->Gamepad.LeftThumbX = Report->ThumbLeftX;
+    State->Gamepad.LeftThumbY = Report->ThumbLeftY;
+    State->Gamepad.RightThumbX = Report->ThumbRightX;
+    State->Gamepad.RightThumbY = Report->ThumbRightY;
+}
+
+static NTSTATUS UpperSnapshotXInputState(
+    _In_ PUPPER_DEVICE_CONTEXT Context,
+    _Out_ PUPPER_XINPUT_STATE State)
+{
+    GAYM_REPORT reportSnapshot;
+    KIRQL oldIrql;
+    SIZE_T compared;
+
+    RtlZeroMemory(State, sizeof(*State));
+    RtlZeroMemory(&reportSnapshot, sizeof(reportSnapshot));
+
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    if (!Context->HasInjectedReport) {
+        KeReleaseSpinLock(&Context->StateLock, oldIrql);
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+
+    reportSnapshot = Context->LastInjectedReport;
+    compared = RtlCompareMemory(
+        &Context->LastPresentedXInputReport,
+        &reportSnapshot,
+        sizeof(reportSnapshot));
+    if (!Context->HasPresentedXInputReport || compared != sizeof(reportSnapshot)) {
+        Context->XInputPacketNumber += 1;
+        Context->LastPresentedXInputReport = reportSnapshot;
+        Context->HasPresentedXInputReport = TRUE;
+    }
+
+    UpperBuildXInputState(&reportSnapshot, Context->XInputPacketNumber, State);
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
+    return STATUS_SUCCESS;
+}
+
+static VOID UpperCompleteRequestWithXInputState(
+    _In_ PUPPER_DEVICE_CONTEXT Context,
+    _In_ WDFREQUEST Request,
+    _In_ ULONG IoControlCode)
+{
+    UPPER_XINPUT_STATE state;
+    PVOID buffer;
+    size_t bufferSize;
+    ULONG eventCode;
+    NTSTATUS status;
+
+    buffer = NULL;
+    bufferSize = 0;
+    RtlZeroMemory(&state, sizeof(state));
+
+    status = UpperResolveXInputBuffer(Request, &buffer, &bufferSize);
+    if (!NT_SUCCESS(status)) {
+        UpperTraceRecord(UPPER_TRACE_EVENT_BUFFER_RESOLVE_FAILED, status);
+        WdfRequestComplete(Request, status);
+        return;
+    }
+
+    status = UpperSnapshotXInputState(Context, &state);
+    if (!NT_SUCCESS(status)) {
+        WdfRequestComplete(Request, status);
+        return;
+    }
+
+    RtlZeroMemory(buffer, bufferSize);
+    RtlCopyMemory(buffer, &state, sizeof(state));
+
+    eventCode = (IoControlCode == IRP_MJ_READ) ?
+        UPPER_TRACE_EVENT_OVERRIDE_XINPUT_READ :
+        UPPER_TRACE_EVENT_OVERRIDE_XINPUT_IOCTL;
+    UpperTraceRecord(eventCode, STATUS_SUCCESS);
+    WdfRequestCompleteWithInformation(Request, STATUS_SUCCESS, sizeof(state));
 }
 
 static VOID UpperCompleteReadWithInjectedReport(
@@ -77,16 +385,20 @@ static VOID UpperCompleteReadWithInjectedReport(
     _In_ WDFREQUEST Request)
 {
     GAYM_REPORT reportSnapshot;
-    GAYM_REPORT parsedReport;
     PVOID buffer;
     size_t bufferSize;
     ULONG bytesWritten;
     KIRQL oldIrql;
-    NTSTATUS parseStatus;
     NTSTATUS status;
 
-    status = UpperResolveReadBuffer(Request, &buffer, &bufferSize);
+    buffer = NULL;
+    bufferSize = 0;
+    bytesWritten = 0;
+    RtlZeroMemory(&reportSnapshot, sizeof(reportSnapshot));
+
+    status = UpperResolveNativeReadBuffer(Request, &buffer, &bufferSize);
     if (!NT_SUCCESS(status)) {
+        UpperTraceRecord(UPPER_TRACE_EVENT_BUFFER_RESOLVE_FAILED, status);
         WdfRequestComplete(Request, status);
         return;
     }
@@ -95,7 +407,6 @@ static VOID UpperCompleteReadWithInjectedReport(
     reportSnapshot = Context->LastInjectedReport;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
 
-    bytesWritten = 0;
     status = UpperDeviceTranslateReport(
         Context,
         (ULONG)sizeof(reportSnapshot),
@@ -103,20 +414,52 @@ static VOID UpperCompleteReadWithInjectedReport(
         buffer,
         (ULONG)bufferSize,
         &bytesWritten);
-    if (NT_SUCCESS(status)) {
-        parseStatus = UpperDeviceParseNativeReport(Context, (const UCHAR*)buffer, bytesWritten, &parsedReport);
-        if (NT_SUCCESS(parseStatus)) {
-            KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-            Context->LastObservedReport = parsedReport;
-            Context->HasObservedReport = TRUE;
-            Context->ReportsObserved++;
-            KeReleaseSpinLock(&Context->StateLock, oldIrql);
-        }
+    UpperTraceRecord(UPPER_TRACE_EVENT_OVERRIDE_HID_IOCTL, status);
+    WdfRequestCompleteWithInformation(Request, status, (ULONG_PTR)bytesWritten);
+}
 
-        UpperTraceRecord((ULONG)IOCTL_GAYM_INJECT_REPORT, (ULONG)parseStatus);
+VOID UpperDeviceCompletePendingReads(_In_ PUPPER_DEVICE_CONTEXT Context)
+{
+    WDFREQUEST request;
+    WDF_REQUEST_PARAMETERS params;
+    ULONG ioControlCode;
+
+    if (Context == NULL || Context->PendingReadQueue == NULL) {
+        return;
     }
 
-    WdfRequestCompleteWithInformation(Request, status, (ULONG_PTR)bytesWritten);
+    request = NULL;
+    while (NT_SUCCESS(WdfIoQueueRetrieveNextRequest(Context->PendingReadQueue, &request))) {
+        if (InterlockedCompareExchange(&Context->PendingInputRequests, 0, 0) > 0) {
+            InterlockedDecrement(&Context->PendingInputRequests);
+        }
+
+        WDF_REQUEST_PARAMETERS_INIT(&params);
+        WdfRequestGetParameters(request, &params);
+
+        ioControlCode = 0;
+        if (params.Type == WdfRequestTypeDeviceControl ||
+            params.Type == WdfRequestTypeDeviceControlInternal) {
+            ioControlCode = params.Parameters.DeviceIoControl.IoControlCode;
+        }
+
+        InterlockedIncrement(&Context->CompletedInputRequests);
+        if (params.Type == WdfRequestTypeRead || UpperShouldInterceptReadIoctl(ioControlCode)) {
+            UpperCompleteReadWithInjectedReport(Context, request);
+        } else {
+            UpperCompleteRequestWithXInputState(Context, request, ioControlCode);
+        }
+    }
+}
+
+VOID UpperDevicePurgePendingReads(_In_ PUPPER_DEVICE_CONTEXT Context)
+{
+    if (Context == NULL || Context->PendingReadQueue == NULL) {
+        return;
+    }
+
+    InterlockedExchange(&Context->PendingInputRequests, 0);
+    WdfIoQueuePurgeSynchronously(Context->PendingReadQueue);
 }
 
 static VOID UpperRecordObservedReport(
@@ -136,6 +479,7 @@ static VOID UpperRecordObservedReport(
     Context->HasObservedReport = TRUE;
     Context->ReportsObserved++;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
+    UpperTraceRecord(UPPER_TRACE_EVENT_OBSERVATION_CAPTURED, STATUS_SUCCESS);
 }
 
 static NTSTATUS UpperRefreshObservedReportFromLower(_In_ PUPPER_DEVICE_CONTEXT Context)
@@ -258,6 +602,7 @@ static VOID UpperForwardRequest(
     WDF_REQUEST_SEND_OPTIONS options;
 
     WDF_REQUEST_SEND_OPTIONS_INIT(&options, WDF_REQUEST_SEND_OPTION_SEND_AND_FORGET);
+
     WdfRequestFormatRequestUsingCurrentType(Request);
 
     if (!WdfRequestSend(Request, Context->LowerTarget, &options)) {
@@ -272,8 +617,12 @@ static VOID UpperEvtInputRequestCompletion(
     _In_ WDFCONTEXT Context)
 {
     PUPPER_DEVICE_CONTEXT upperContext;
+    WDF_REQUEST_PARAMETERS requestParams;
+    ULONG ioControlCode;
     BOOLEAN overrideEnabled;
     BOOLEAN hasInjectedReport;
+    BOOLEAN isNativeReadIoctl;
+    BOOLEAN isXInputIoctl;
     PVOID buffer;
     size_t bufferSize;
     KIRQL oldIrql;
@@ -281,6 +630,24 @@ static VOID UpperEvtInputRequestCompletion(
     UNREFERENCED_PARAMETER(Target);
 
     upperContext = (PUPPER_DEVICE_CONTEXT)Context;
+    buffer = NULL;
+    bufferSize = 0;
+
+    WDF_REQUEST_PARAMETERS_INIT(&requestParams);
+    WdfRequestGetParameters(Request, &requestParams);
+
+    ioControlCode = 0;
+    if (requestParams.Type == WdfRequestTypeDeviceControl ||
+        requestParams.Type == WdfRequestTypeDeviceControlInternal) {
+        ioControlCode = requestParams.Parameters.DeviceIoControl.IoControlCode;
+    }
+
+    isNativeReadIoctl =
+        (requestParams.Type == WdfRequestTypeRead) ||
+        ((requestParams.Type == WdfRequestTypeDeviceControl ||
+         requestParams.Type == WdfRequestTypeDeviceControlInternal) &&
+        UpperShouldInterceptReadIoctl(ioControlCode));
+    isXInputIoctl = UpperRequestIsPotentialXInputIoctl(Request, ioControlCode);
 
     KeAcquireSpinLock(&upperContext->StateLock, &oldIrql);
     overrideEnabled = upperContext->OverrideEnabled;
@@ -288,15 +655,29 @@ static VOID UpperEvtInputRequestCompletion(
     KeReleaseSpinLock(&upperContext->StateLock, oldIrql);
 
     if (overrideEnabled && hasInjectedReport) {
-        UpperCompleteReadWithInjectedReport(upperContext, Request);
-        return;
+        if (isNativeReadIoctl) {
+            UpperCompleteReadWithInjectedReport(upperContext, Request);
+            return;
+        }
+
+        if (isXInputIoctl) {
+            UpperCompleteRequestWithXInputState(
+                upperContext,
+                Request,
+                ioControlCode);
+            return;
+        }
     }
 
-    if (NT_SUCCESS(Params->IoStatus.Status) &&
-        NT_SUCCESS(UpperResolveReadBuffer(Request, &buffer, &bufferSize))) {
-        UpperRecordObservedReport(upperContext, (const UCHAR*)buffer, (ULONG)min(bufferSize, Params->IoStatus.Information));
+    if (NT_SUCCESS(Params->IoStatus.Status) && isNativeReadIoctl &&
+        NT_SUCCESS(UpperResolveNativeReadBuffer(Request, &buffer, &bufferSize))) {
+        UpperRecordObservedReport(
+            upperContext,
+            (const UCHAR*)buffer,
+            (ULONG)min(bufferSize, Params->IoStatus.Information));
     }
 
+    UpperTraceRecord(UPPER_TRACE_EVENT_FORWARD_COMPLETION, Params->IoStatus.Status);
     WdfRequestCompleteWithInformation(Request, Params->IoStatus.Status, Params->IoStatus.Information);
 }
 
@@ -316,12 +697,29 @@ static VOID UpperHandleReadRequest(
     Context->LastInterceptedIoctl = (LONG)IoControlCode;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
 
-    if (overrideEnabled && hasInjectedReport) {
-        UpperCompleteReadWithInjectedReport(Context, Request);
+    if (overrideEnabled) {
+        if (IoControlCode == IRP_MJ_READ || UpperShouldInterceptReadIoctl(IoControlCode)) {
+            UpperQueuePendingReadRequest(Context, Request);
+        } else if (hasInjectedReport) {
+            UpperCompleteRequestWithXInputState(Context, Request, IoControlCode);
+        } else {
+            status = UpperForwardRequestToLower(Context, Request);
+            UpperTraceRecord(UPPER_TRACE_EVENT_FORWARD_READ_REQUEST, status);
+            if (NT_SUCCESS(status)) {
+                InterlockedIncrement(&Context->ForwardedInputRequests);
+            }
+            if (!NT_SUCCESS(status)) {
+                WdfRequestComplete(Request, status);
+            }
+        }
         return;
     }
 
     status = UpperForwardRequestToLower(Context, Request);
+    UpperTraceRecord(UPPER_TRACE_EVENT_FORWARD_READ_REQUEST, status);
+    if (NT_SUCCESS(status)) {
+        InterlockedIncrement(&Context->ForwardedInputRequests);
+    }
     if (!NT_SUCCESS(status)) {
         WdfRequestComplete(Request, status);
     }
@@ -353,7 +751,8 @@ VOID UpperEvtIoDeviceControl(
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     InterlockedIncrement(&context->DeviceControlRequestsSeen);
-    if (UpperShouldInterceptReadIoctl(IoControlCode)) {
+    if (UpperShouldInterceptReadIoctl(IoControlCode) ||
+        UpperRequestIsPotentialXInputIoctl(Request, IoControlCode)) {
         UpperHandleReadRequest(context, Request, IoControlCode);
         return;
     }
@@ -374,7 +773,8 @@ VOID UpperEvtIoInternalDeviceControl(
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     InterlockedIncrement(&context->InternalDeviceControlRequestsSeen);
-    if (UpperShouldInterceptReadIoctl(IoControlCode)) {
+    if (UpperShouldInterceptReadIoctl(IoControlCode) ||
+        UpperRequestIsPotentialXInputIoctl(Request, IoControlCode)) {
         UpperHandleReadRequest(context, Request, IoControlCode);
         return;
     }

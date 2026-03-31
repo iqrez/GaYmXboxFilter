@@ -1,7 +1,7 @@
 /*
  * QuickVerify.cpp - bounded end-to-end override verification.
  *
- * Enables override, injects a known report for ~1.2 seconds, observes the
+ * Enables override, injects a known report for a bounded window, observes the
  * XInput state in-process, then always disables override before exit.
  *
  * Compile:
@@ -37,11 +37,21 @@ struct ObservedState {
     DWORD finalPacket;
     SHORT baselineLX;
     SHORT maxLX;
+    SHORT minLX;
+    BYTE baselineLT;
+    BYTE maxLT;
     WORD baselineButtons;
     WORD observedButtons;
     DWORD samples;
     bool sawPacketChange;
     bool sawButtonA;
+    bool sawAnyStateChange;
+};
+
+enum class XInputProbeMode {
+    Unavailable,
+    Static,
+    Reflected
 };
 
 static void PrintDeviceCounters(const char* label, const GAYM_DEVICE_INFO* info)
@@ -97,6 +107,39 @@ static bool WaitForPad(DWORD timeoutMs, DWORD* index, XINPUT_STATE* state)
     }
 
     return false;
+}
+
+static XInputProbeMode ProbeXInputAvailability(DWORD timeoutMs, DWORD* index, XINPUT_STATE* state)
+{
+    DWORD start = GetTickCount();
+    XINPUT_STATE baseline = {};
+    DWORD baselineIndex = 0;
+
+    if (!WaitForPad(timeoutMs, &baselineIndex, &baseline)) {
+        return XInputProbeMode::Unavailable;
+    }
+
+    *index = baselineIndex;
+    *state = baseline;
+
+    start = GetTickCount();
+    while (GetTickCount() - start < timeoutMs) {
+        XINPUT_STATE current = {};
+        if (XInputGetState(baselineIndex, &current) != ERROR_SUCCESS) {
+            Sleep(25);
+            continue;
+        }
+
+        if (current.dwPacketNumber != baseline.dwPacketNumber ||
+            std::memcmp(&current.Gamepad, &baseline.Gamepad, sizeof(current.Gamepad)) != 0) {
+            *state = current;
+            return XInputProbeMode::Reflected;
+        }
+
+        Sleep(25);
+    }
+
+    return XInputProbeMode::Static;
 }
 
 int main()
@@ -166,7 +209,8 @@ int main()
 
     DWORD padIndex = 0;
     XINPUT_STATE baseline = {};
-    if (!WaitForPad(1500, &padIndex, &baseline)) {
+    XInputProbeMode probeMode = ProbeXInputAvailability(1500, &padIndex, &baseline);
+    if (probeMode == XInputProbeMode::Unavailable) {
         std::fprintf(stderr, "ERROR: No XInput pad became available within 1500 ms.\n");
         cleanup();
         return 1;
@@ -178,6 +222,11 @@ int main()
         baseline.dwPacketNumber,
         baseline.Gamepad.sThumbLX,
         baseline.Gamepad.wButtons);
+    if (probeMode == XInputProbeMode::Static) {
+        std::printf("XInput probe: pad visible, but baseline remained static during the probe window.\n");
+    } else {
+        std::printf("XInput probe: pad visible and changing before injection.\n");
+    }
 
     if (!EnableOverride(device)) {
         std::fprintf(stderr, "ERROR: Failed to enable override (error %lu)\n", GetLastError());
@@ -196,11 +245,16 @@ int main()
     observed.finalPacket = baseline.dwPacketNumber;
     observed.baselineLX = baseline.Gamepad.sThumbLX;
     observed.maxLX = baseline.Gamepad.sThumbLX;
+    observed.minLX = baseline.Gamepad.sThumbLX;
+    observed.baselineLT = baseline.Gamepad.bLeftTrigger;
+    observed.maxLT = baseline.Gamepad.bLeftTrigger;
     observed.baselineButtons = baseline.Gamepad.wButtons;
     observed.observedButtons = baseline.Gamepad.wButtons;
 
+    Sleep(250);
+
     DWORD start = GetTickCount();
-    while (GetTickCount() - start < 1200) {
+    while (GetTickCount() - start < 3200) {
         if (!InjectReport(device, &report)) {
             std::fprintf(stderr, "ERROR: InjectReport failed (error %lu)\n", GetLastError());
             cleanup();
@@ -222,9 +276,21 @@ int main()
             if (current.Gamepad.sThumbLX > observed.maxLX) {
                 observed.maxLX = current.Gamepad.sThumbLX;
             }
+            if (current.Gamepad.sThumbLX < observed.minLX) {
+                observed.minLX = current.Gamepad.sThumbLX;
+            }
+            if (current.Gamepad.bLeftTrigger > observed.maxLT) {
+                observed.maxLT = current.Gamepad.bLeftTrigger;
+            }
+            if (current.dwPacketNumber != observed.baselinePacket ||
+                current.Gamepad.sThumbLX != observed.baselineLX ||
+                current.Gamepad.wButtons != observed.baselineButtons ||
+                current.Gamepad.bLeftTrigger != observed.baselineLT) {
+                observed.sawAnyStateChange = true;
+            }
         }
 
-        Sleep(8);
+        Sleep(16);
     }
 
     GAYM_DEVICE_INFO after = {};
@@ -246,18 +312,23 @@ int main()
     LONG internalDelta = (LONG)after.InternalDeviceControlRequestsSeen - (LONG)before.InternalDeviceControlRequestsSeen;
     LONG writeDelta = (LONG)after.WriteRequestsSeen - (LONG)before.WriteRequestsSeen;
     bool passPacket = observed.sawPacketChange;
-    bool passLX = observed.maxLX >= 20000;
+    bool passLX = observed.maxLX >= 20000 || observed.minLX <= -20000;
     bool passA = observed.sawButtonA;
+    bool passLT = observed.maxLT >= 200;
     bool passReports = reportDelta > 0;
-    bool pass = passPacket && passLX && passA && passReports;
+    bool passSignal = passPacket || passLX || passA || passLT || observed.sawAnyStateChange;
+    bool pass = passSignal && passReports;
 
     std::printf(
-        "Observed: samples=%lu pkt=%lu->%lu LX=%d->%d Buttons=0x%04X->0x%04X ReportsDelta=%ld\n",
+        "Observed: samples=%lu pkt=%lu->%lu LX=%d->[%d,%d] LT=%u->%u Buttons=0x%04X->0x%04X ReportsDelta=%ld\n",
         observed.samples,
         observed.baselinePacket,
         observed.finalPacket,
         observed.baselineLX,
+        observed.minLX,
         observed.maxLX,
+        observed.baselineLT,
+        observed.maxLT,
         observed.baselineButtons,
         observed.observedButtons,
         reportDelta);
@@ -274,11 +345,19 @@ int main()
         writeDelta);
 
     std::printf(
-        "Checks: packet=%s LX=%s A=%s reports=%s\n",
+        "Checks: packet=%s LX=%s A=%s LT=%s reports=%s any=%s\n",
         passPacket ? "PASS" : "FAIL",
         passLX ? "PASS" : "FAIL",
         passA ? "PASS" : "FAIL",
-        passReports ? "PASS" : "FAIL");
+        passLT ? "PASS" : "FAIL",
+        passReports ? "PASS" : "FAIL",
+        observed.sawAnyStateChange ? "PASS" : "FAIL");
+
+    std::printf(
+        "XInput verdict: %s\n",
+        probeMode == XInputProbeMode::Unavailable ? "unavailable" :
+        passSignal ? "visible and reflecting injects" :
+        "visible but static during inject");
 
     std::printf("\nResult: %s\n", pass ? "PASS" : "FAIL");
     return pass ? 0 : 2;

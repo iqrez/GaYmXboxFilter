@@ -64,6 +64,23 @@ static void PrintObservation(const GAYM_OBSERVATION_V1& observation)
         (observation.StatusFlags & GAYM_STATUS_OBSERVATION_SYNTHETIC) ? " synthetic" : "");
 }
 
+static bool WaitForOverrideState(HANDLE device, bool expectedEnabled, DWORD timeoutMs)
+{
+    DWORD start = GetTickCount();
+
+    while (GetTickCount() - start < timeoutMs) {
+        GAYM_DEVICE_INFO info = {};
+        if (QueryAdapterInfo(device, &info) && info.OverrideActive == (expectedEnabled ? TRUE : FALSE)) {
+            return true;
+        }
+
+        Sleep(25);
+    }
+
+    SetLastError(WAIT_TIMEOUT);
+    return false;
+}
+
 static int CmdStatus()
 {
     auto devices = EnumerateSupportedAdapters();
@@ -244,6 +261,9 @@ static int CmdTest(int argc, char* argv[])
 
     if (!DisableOverride(h)) {
         fprintf(stderr, "Failed to disable override (error %lu).\n", GetLastError());
+        exitCode = 1;
+    } else if (!WaitForOverrideState(h, false, 2000)) {
+        fprintf(stderr, "Override did not settle OFF before timeout (error %lu).\n", GetLastError());
         exitCode = 1;
     }
     if (!ReleaseWriterSession(h)) {

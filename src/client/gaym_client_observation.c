@@ -5,7 +5,6 @@
 BOOL gaym_client_query_semantic_observation_handle(HANDLE device, PGAYM_OBSERVATION_V1 observation)
 {
     GAYM_DEVICE_INFO info;
-    HANDLE fallbackHandle;
 
     if (observation == NULL) {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -23,30 +22,6 @@ BOOL gaym_client_query_semantic_observation_handle(HANDLE device, PGAYM_OBSERVAT
             sizeof(*observation),
             NULL)) {
         return TRUE;
-    }
-
-    fallbackHandle = CreateFileW(
-        GAYM_CONTROL_DEVICE_DIAGNOSTIC_W,
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        NULL,
-        OPEN_EXISTING,
-        0,
-        NULL);
-    if (fallbackHandle != INVALID_HANDLE_VALUE) {
-        if (gaym_client_send_ioctl(
-                fallbackHandle,
-                (DWORD)IOCTL_GAYM_QUERY_OBSERVATION,
-                NULL,
-                0,
-                observation,
-                sizeof(*observation),
-                NULL)) {
-            CloseHandle(fallbackHandle);
-            return TRUE;
-        }
-
-        CloseHandle(fallbackHandle);
     }
 
     if (!gaym_client_query_device_info_handle(device, &info)) {

@@ -105,7 +105,7 @@ static VOID UpperCompleteReadWithInjectedReport(
         Context->HasObservedReport = TRUE;
         Context->ReportsObserved++;
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
-        UpperTraceRecord(IOCTL_GAYM_INJECT_REPORT, status);
+        UpperTraceRecord((ULONG)IOCTL_GAYM_INJECT_REPORT, (ULONG)status);
     }
 
     WdfRequestCompleteWithInformation(Request, status, (ULONG_PTR)bytesWritten);

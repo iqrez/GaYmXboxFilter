@@ -10,6 +10,7 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     WDFIOTARGET LowerTarget;
     WDFQUEUE DefaultQueue;
     KSPIN_LOCK StateLock;
+    WDFFILEOBJECT WriterFileObject;
     BOOLEAN WriterSessionHeld;
     BOOLEAN OverrideEnabled;
     BOOLEAN IsAttached;
@@ -21,6 +22,7 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     volatile LONG ReadRequestsSeen;
     volatile LONG DeviceControlRequestsSeen;
     volatile LONG InternalDeviceControlRequestsSeen;
+    volatile LONG WriteRequestsSeen;
     volatile LONG LastInterceptedIoctl;
     GAYM_DEVICE_INFO LastDeviceInfo;
     GAYM_OBSERVATION_V1 LastObservation;

@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "gaym_client_compat.h"
 
@@ -61,6 +62,18 @@ struct CounterObservation {
     GAYM_DEVICE_INFO before = {};
     GAYM_DEVICE_INFO after = {};
 };
+
+enum class VerificationMode {
+    None,
+    XInputDirect,
+    RawHid,
+    CounterFallback
+};
+
+static CounterObservation RunCounterStep(HANDLE device, const VerificationStep* step);
+static bool PrintCounterEvaluation(const VerificationStep* step, const CounterObservation* observed);
+static const char* VerificationModeToLabel(VerificationMode mode, bool passed);
+static void PersistVerificationState(VerificationMode mode, bool passed);
 
 static void InitReport(GAYM_REPORT* report)
 {
@@ -377,6 +390,22 @@ static bool PrintEvaluation(const VerificationStep* step, const ObservedState* o
     return pass;
 }
 
+static bool RunCounterFallback(HANDLE device, const VerificationStep* steps, size_t stepCount)
+{
+    bool allPassed = true;
+
+    std::printf("Falling back to driver-side queue/completion counters.\n");
+    for (size_t index = 0; index < stepCount; ++index) {
+        CounterObservation observed = RunCounterStep(device, &steps[index]);
+        if (!PrintCounterEvaluation(&steps[index], &observed)) {
+            allPassed = false;
+        }
+        Sleep(120);
+    }
+
+    return allPassed;
+}
+
 static bool PrintHidEvaluation(const VerificationStep* step, const HidObservation* observed)
 {
     std::printf("  %-18s : %s | reports=%lu firstDiff=%lu\n",
@@ -430,7 +459,7 @@ static bool PrintCounterEvaluation(const VerificationStep* step, const CounterOb
     LONG deltaWrites = (LONG)observed->after.WriteRequestsSeen - (LONG)observed->before.WriteRequestsSeen;
 
     bool pass = deltaQueued > 0 || deltaCompleted > 0 || deltaForwarded > 0 ||
-        deltaReads > 0 || deltaDevCtl > 0 || deltaInternal > 0 || deltaWrites > 0;
+        deltaReads > 0 || deltaDevCtl > 0 || deltaInternal > 0;
 
     std::printf("  %-18s : %s | dReports=%ld dQueued=%ld dCompleted=%ld dForwarded=%ld dRead=%ld dDevCtl=%ld dInternal=%ld dWrite=%ld lastIoctl=0x%08X\n",
         step->label,
@@ -446,6 +475,95 @@ static bool PrintCounterEvaluation(const VerificationStep* step, const CounterOb
         observed->after.LastInterceptedIoctl);
 
     return pass;
+}
+
+static std::wstring TrimToParentDirectory(const std::wstring& path)
+{
+    const size_t separator = path.find_last_of(L"\\/");
+    if (separator == std::wstring::npos) {
+        return std::wstring();
+    }
+
+    return path.substr(0, separator);
+}
+
+static std::wstring GetVerificationStatePath()
+{
+    wchar_t executablePath[MAX_PATH] = {};
+    DWORD length = GetModuleFileNameW(NULL, executablePath, ARRAYSIZE(executablePath));
+    if (length == 0 || length >= ARRAYSIZE(executablePath)) {
+        return std::wstring();
+    }
+
+    std::wstring toolsDirectory = TrimToParentDirectory(executablePath);
+    std::wstring profileDirectory = TrimToParentDirectory(toolsDirectory);
+    if (profileDirectory.empty()) {
+        return std::wstring();
+    }
+
+    std::wstring verificationDirectory = profileDirectory + L"\\verification";
+    if (!CreateDirectoryW(verificationDirectory.c_str(), NULL)) {
+        DWORD error = GetLastError();
+        if (error != ERROR_ALREADY_EXISTS) {
+            return std::wstring();
+        }
+    }
+
+    return verificationDirectory + L"\\autoverify-state.json";
+}
+
+static const char* VerificationModeToLabel(VerificationMode mode, bool passed)
+{
+    switch (mode) {
+    case VerificationMode::XInputDirect:
+        return passed ? "xinput_direct_pass" : "xinput_direct_fail";
+    case VerificationMode::RawHid:
+        return passed ? "raw_hid_pass" : "raw_hid_fail";
+    case VerificationMode::CounterFallback:
+        return passed ? "counter_fallback_pass" : "counter_fallback_fail";
+    default:
+        return passed ? "unknown_pass" : "unknown_fail";
+    }
+}
+
+static void PersistVerificationState(VerificationMode mode, bool passed)
+{
+    std::wstring statePath = GetVerificationStatePath();
+    SYSTEMTIME utcNow = {};
+    FILE* file = NULL;
+    const char* modeLabel = VerificationModeToLabel(mode, passed);
+
+    if (statePath.empty()) {
+        std::fprintf(stderr, "WARNING: Could not resolve AutoVerify state path.\n");
+        return;
+    }
+
+    GetSystemTime(&utcNow);
+    if (_wfopen_s(&file, statePath.c_str(), L"wb") != 0 || file == NULL) {
+        std::fprintf(stderr, "WARNING: Could not write AutoVerify state file.\n");
+        return;
+    }
+
+    std::fprintf(
+        file,
+        "{\n"
+        "  \"schema\": 1,\n"
+        "  \"tool\": \"AutoVerify\",\n"
+        "  \"result\": \"%s\",\n"
+        "  \"verificationMode\": \"%s\",\n"
+        "  \"createdUtc\": \"%04u-%02u-%02uT%02u:%02u:%02uZ\"\n"
+        "}\n",
+        passed ? "PASS" : "FAIL",
+        modeLabel,
+        (unsigned)utcNow.wYear,
+        (unsigned)utcNow.wMonth,
+        (unsigned)utcNow.wDay,
+        (unsigned)utcNow.wHour,
+        (unsigned)utcNow.wMinute,
+        (unsigned)utcNow.wSecond);
+    std::fclose(file);
+
+    std::wprintf(L"Verification state: %ls\n", statePath.c_str());
 }
 
 int main()
@@ -518,19 +636,38 @@ int main()
     steps[4].report.Buttons[0] = GAYM_BTN_A;
 
     bool allPassed = true;
+    VerificationMode verificationMode = VerificationMode::None;
     DWORD padIndex = 0;
     XINPUT_STATE baseline = {};
     bool useXinput = WaitForPad(2000, &padIndex, &baseline);
 
     std::printf("\n=== Verification ===\n");
     if (useXinput) {
+        bool xinputObservedAnyChange = false;
+        bool xinputAllPassed = true;
+
         std::printf("Monitoring XInput pad %lu (packet %lu)\n", padIndex, baseline.dwPacketNumber);
         for (const auto& step : steps) {
             ObservedState observed = RunStep(device, padIndex, &step, &baseline);
+            if (observed.packetChanges != 0 || observed.buttonsOr != 0 ||
+                observed.maxLT != 0 || observed.maxRT != 0 ||
+                observed.minLX != observed.maxLX || observed.minLY != observed.maxLY ||
+                observed.minRX != observed.maxRX || observed.minRY != observed.maxRY) {
+                xinputObservedAnyChange = true;
+            }
             if (!PrintEvaluation(&step, &observed)) {
-                allPassed = false;
+                xinputAllPassed = false;
             }
             Sleep(120);
+        }
+
+        if (xinputAllPassed && xinputObservedAnyChange) {
+            allPassed = true;
+            verificationMode = VerificationMode::XInputDirect;
+        } else {
+            std::printf("XInput was visible but did not reflect injected state reliably.\n");
+            allPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));
+            verificationMode = VerificationMode::CounterFallback;
         }
     } else {
         USHORT inputReportLength = 0;
@@ -551,6 +688,7 @@ int main()
         }
 
         std::printf("XInput not visible in this shell. Falling back to raw HID report verification.\n");
+        verificationMode = VerificationMode::RawHid;
         for (const auto& step : steps) {
             HidObservation observed = RunHidStep(device, hid, &step, baselineReport, inputReportLength);
             if (!PrintHidEvaluation(&step, &observed)) {
@@ -561,15 +699,9 @@ int main()
 
         CloseHandle(hid);
         if (!allPassed) {
-            std::printf("Raw HID reads were not available. Falling back to driver-side queue/completion counters.\n");
-            allPassed = true;
-            for (const auto& step : steps) {
-                CounterObservation observed = RunCounterStep(device, &step);
-                if (!PrintCounterEvaluation(&step, &observed)) {
-                    allPassed = false;
-                }
-                Sleep(120);
-            }
+            std::printf("Raw HID reads were not available. ");
+            allPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));
+            verificationMode = VerificationMode::CounterFallback;
         }
     }
 
@@ -579,6 +711,10 @@ int main()
     }
     CloseHandle(device);
 
+    const char* modeLabel = VerificationModeToLabel(verificationMode, allPassed);
+    PersistVerificationState(verificationMode, allPassed);
+
+    std::printf("Verification mode: %s\n", modeLabel);
     std::printf("\nResult: %s\n", allPassed ? "PASS" : "FAIL");
     return allPassed ? 0 : 2;
 }

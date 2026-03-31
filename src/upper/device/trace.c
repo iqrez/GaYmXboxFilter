@@ -78,7 +78,7 @@ VOID UpperTraceReset(VOID)
 {
 }
 
-VOID UpperTraceRecord(_In_ ULONG EventCode, _In_ ULONG Status)
+VOID UpperTraceRecord(_In_ ULONG EventCode, _In_ NTSTATUS Status)
 {
     UNREFERENCED_PARAMETER(EventCode);
     UNREFERENCED_PARAMETER(Status);
@@ -86,7 +86,6 @@ VOID UpperTraceRecord(_In_ ULONG EventCode, _In_ ULONG Status)
 
 VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
 {
-    GAYM_OBSERVATION_V1 lowerObservation;
     GAYM_REPORT reportSnapshot;
     BOOLEAN writerHeld;
     BOOLEAN overrideEnabled;
@@ -97,8 +96,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     ULONG reportsInjected;
     ULONG reportsObserved;
     LONG readRequestsSeen;
-    ULONG_PTR lowerBytesReturned;
-    NTSTATUS lowerStatus;
     KIRQL oldIrql;
 
     if (Context == NULL) {
@@ -106,7 +103,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     }
 
     RtlZeroMemory(&reportSnapshot, sizeof(reportSnapshot));
-    RtlZeroMemory(&lowerObservation, sizeof(lowerObservation));
 
     KeAcquireSpinLock(&Context->StateLock, &oldIrql);
     writerHeld = Context->WriterSessionHeld;
@@ -125,36 +121,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
         reportSnapshot = Context->LastObservedReport;
     }
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
-
-    lowerBytesReturned = 0;
-    lowerStatus = UpperDeviceSendLowerControlIoctl(
-        Context,
-        IOCTL_GAYM_QUERY_OBSERVATION,
-        NULL,
-        0,
-        &lowerObservation,
-        sizeof(lowerObservation),
-        &lowerBytesReturned);
-    if (NT_SUCCESS(lowerStatus) && lowerBytesReturned >= sizeof(lowerObservation)) {
-        Context->LastObservation = lowerObservation;
-        Context->LastObservation.AdapterFamily =
-            isAttached ? GAYM_ADAPTER_FAMILY_XBOX_02FF : GAYM_ADAPTER_FAMILY_UNKNOWN;
-        Context->LastObservation.StatusFlags &= ~(GAYM_STATUS_WRITER_HELD | GAYM_STATUS_OVERRIDE_ACTIVE);
-        if (isAttached) {
-            Context->LastObservation.StatusFlags |= GAYM_STATUS_DEVICE_PRESENT;
-        }
-        if (writerHeld) {
-            Context->LastObservation.StatusFlags |= GAYM_STATUS_WRITER_HELD;
-        }
-        if (overrideEnabled) {
-            Context->LastObservation.StatusFlags |= GAYM_STATUS_OVERRIDE_ACTIVE;
-        }
-        Context->LastObservation.LastInjectedSequence = reportsInjected;
-        Context->LastObservation.TimestampQpc = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
-        Context->LastObservation.PowerFlags = isInD0 ? 1 : 0;
-        Context->LastObservation.Reserved = (USHORT)reportsObserved;
-        return;
-    }
 
     RtlZeroMemory(&Context->LastObservation, sizeof(Context->LastObservation));
     Context->LastObservation.Header.Magic = GAYM_PROTOCOL_MAGIC;

@@ -22,9 +22,19 @@
 #define GAYM_CURRENT_LOG_LEVEL  GAYM_LOG_LEVEL_ERROR
 #endif
 
+static __forceinline ULONG GaYmCurrentLogLevel(VOID)
+{
+    return GAYM_CURRENT_LOG_LEVEL;
+}
+
+static __forceinline BOOLEAN GaYmShouldLog(_In_ ULONG Level)
+{
+    return Level <= GaYmCurrentLogLevel();
+}
+
 #define GAYM_LOG(level, prefix, fmt, ...)                              \
     do {                                                               \
-        if ((level) <= GAYM_CURRENT_LOG_LEVEL) {                       \
+        if (GaYmShouldLog((ULONG)(level))) {                           \
             DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,         \
                 "[GaYmFilter][" prefix "] " fmt "\n", ##__VA_ARGS__); \
         }                                                              \

@@ -4,7 +4,7 @@ Class=Extension
 ClassGuid={e2f84ce7-8efa-411c-aa69-97454ca4cb57}
 Provider=%GAYM%
 ExtensionId={72f500eb-b817-42a5-b9f6-46afc2c02cf3}
-DriverVer=03/30/2026,5.30.0.0
+DriverVer=03/31/2026,5.30.0.2
 CatalogFile=GaYmFilter.cat
 PnpLockdown=1
 

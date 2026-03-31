@@ -204,7 +204,7 @@ static NTSTATUS GaYmRefreshObservedReportFromLower(_In_ PDEVICE_CONTEXT Ctx)
         return STATUS_NOT_SUPPORTED;
     }
 
-    buffer = (PUCHAR)ExAllocatePoolWithTag(NonPagedPoolNx, bufferLength, 'rGyG');
+    buffer = (PUCHAR)ExAllocatePoolZero(NonPagedPoolNx, bufferLength, 'rGyG');
     if (buffer == NULL) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }

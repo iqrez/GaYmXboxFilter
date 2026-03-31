@@ -36,6 +36,7 @@ static VOID UpperBuildDeviceInfo(
     DeviceInfo->ReadRequestsSeen = (ULONG)Context->ReadRequestsSeen;
     DeviceInfo->DeviceControlRequestsSeen = (ULONG)Context->DeviceControlRequestsSeen;
     DeviceInfo->InternalDeviceControlRequestsSeen = (ULONG)Context->InternalDeviceControlRequestsSeen;
+    DeviceInfo->WriteRequestsSeen = (ULONG)Context->WriteRequestsSeen;
     DeviceInfo->LastInterceptedIoctl = (ULONG)Context->LastInterceptedIoctl;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
 }
@@ -59,31 +60,61 @@ static NTSTATUS UpperStoreInjectedReport(
     Context->HasInjectedReport = TRUE;
     Context->HasObservedReport = TRUE;
     Context->ReportsInjected++;
+    Context->WriteRequestsSeen++;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
     return STATUS_SUCCESS;
+}
+
+static BOOLEAN UpperTryRecoverStaleWriterLocked(_Inout_ PUPPER_DEVICE_CONTEXT Context)
+{
+    PFILE_OBJECT fileObject;
+
+    fileObject = (PFILE_OBJECT)Context->WriterFileObject;
+    if (!Context->WriterSessionHeld || fileObject == NULL) {
+        return FALSE;
+    }
+
+    if (ObReferenceObjectSafe(fileObject)) {
+        ObDereferenceObject(fileObject);
+        return FALSE;
+    }
+
+    Context->WriterFileObject = NULL;
+    Context->WriterSessionHeld = FALSE;
+    Context->OverrideEnabled = FALSE;
+    Context->HasInjectedReport = FALSE;
+    return TRUE;
 }
 
 NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQUEST Request, _In_ ULONG IoControlCode)
 {
     NTSTATUS status;
     KIRQL oldIrql;
+    WDFFILEOBJECT requestFileObject;
+
+    requestFileObject = WdfRequestGetFileObject(Request);
 
     switch (IoControlCode) {
     case IOCTL_GAYM_ACQUIRE_WRITER_SESSION:
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-        if (Context->WriterSessionHeld) {
+        if (Context->WriterSessionHeld && Context->WriterFileObject != requestFileObject) {
+            (VOID)UpperTryRecoverStaleWriterLocked(Context);
+        }
+        if (Context->WriterSessionHeld && Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
             return STATUS_DEVICE_BUSY;
         }
+        Context->WriterFileObject = requestFileObject;
         Context->WriterSessionHeld = TRUE;
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
         return STATUS_SUCCESS;
     case IOCTL_GAYM_RELEASE_WRITER_SESSION:
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-        if (!Context->WriterSessionHeld) {
+        if (!Context->WriterSessionHeld || Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
             return STATUS_INVALID_DEVICE_STATE;
         }
+        Context->WriterFileObject = NULL;
         Context->WriterSessionHeld = FALSE;
         Context->OverrideEnabled = FALSE;
         Context->HasInjectedReport = FALSE;
@@ -91,7 +122,7 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         return STATUS_SUCCESS;
     case IOCTL_GAYM_OVERRIDE_ON:
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-        if (!Context->WriterSessionHeld) {
+        if (!Context->WriterSessionHeld || Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
             return STATUS_ACCESS_DENIED;
         }
@@ -100,12 +131,16 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         return STATUS_SUCCESS;
     case IOCTL_GAYM_OVERRIDE_OFF:
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+        if (Context->WriterSessionHeld && Context->WriterFileObject != requestFileObject) {
+            KeReleaseSpinLock(&Context->StateLock, oldIrql);
+            return STATUS_ACCESS_DENIED;
+        }
         Context->OverrideEnabled = FALSE;
         KeReleaseSpinLock(&Context->StateLock, oldIrql);
         return STATUS_SUCCESS;
     case IOCTL_GAYM_INJECT_REPORT:
         KeAcquireSpinLock(&Context->StateLock, &oldIrql);
-        if (!Context->WriterSessionHeld) {
+        if (!Context->WriterSessionHeld || Context->WriterFileObject != requestFileObject) {
             KeReleaseSpinLock(&Context->StateLock, oldIrql);
             return STATUS_ACCESS_DENIED;
         }

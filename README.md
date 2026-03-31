@@ -17,6 +17,8 @@ The current repo state reflects the shared/client split:
 - `out/dev/client/` is the staged client output
 - control ownership is still transitional until the upper driver is fully
   implemented
+- live verification currently relies on `GaYmCLI`, `GaYmFeeder`,
+  `XInputCheck`, and `AutoVerify`
 
 The supported MVP target is narrow:
 
@@ -59,6 +61,29 @@ shared/client split now landed.
 - `docs/` contains architecture and handoff documentation
 - `archive/` contains dead or paused experiments only
 - `out/` is the staged output root and is ignored in Git
+
+## Verification
+
+Supported verification on the current live stack is:
+
+- bounded control mutation through `GaYmCLI.exe`
+- feeder-driven semantic injection through `GaYmFeeder.exe`
+- XInput observation through `XInputCheck.exe`
+- automated bounded regression through `AutoVerify.exe`
+
+Current tool status:
+
+- `GaYmCLI.exe` is a supported operator and maintainer control tool
+- `GaYmFeeder.exe` is a supported producer-side exerciser
+- `XInputCheck.exe` is the supported XInput observation monitor
+- `AutoVerify.exe` is the supported bounded regression tool
+  and now reports explicit result modes such as `xinput_direct_pass`,
+  `raw_hid_pass`, and `counter_fallback_pass`
+- `XInputAutoVerify.exe` is diagnostic-only and is not staged as part of the curated dev toolset
+- `QuickVerify.exe` is diagnostic-only and not an authoritative pass/fail gate
+  on this machine because its in-process XInput polling has produced false
+  negatives while `XInputCheck.exe` and the live stack showed valid injected
+  XInput state
 
 ## Next Steps
 

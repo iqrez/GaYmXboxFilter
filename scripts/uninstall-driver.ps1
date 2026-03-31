@@ -1,5 +1,8 @@
 [CmdletBinding()]
 param(
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Debug',
+
     [string]$HardwareId = 'HID\VID_045E&PID_02FF&IG_00',
     [string]$InstanceId,
     [string]$DriverInf,
@@ -7,11 +10,12 @@ param(
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$profileSegment = if ($Configuration -eq 'Debug') { 'dev' } else { 'release' }
 if (-not $DriverInf) {
-    $DriverInf = Join-Path $repoRoot 'out\dev\driver\GaYmFilter.inf'
+    $DriverInf = Join-Path $repoRoot ("out\" + $profileSegment + '\driver\GaYmFilter.inf')
 }
 if (-not $UpperDriverInf) {
-    $UpperDriverInf = Join-Path $repoRoot 'out\dev\upper\GaYmXInputFilter.inf'
+    $UpperDriverInf = Join-Path $repoRoot ("out\" + $profileSegment + '\upper\GaYmXInputFilter.inf')
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()

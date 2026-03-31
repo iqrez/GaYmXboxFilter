@@ -29,18 +29,6 @@
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
-static const char* DeviceTypeName(GAYM_DEVICE_TYPE t) {
-    (void)t;
-    return "Xbox 02FF";
-}
-
-static BOOL SendIoctl(HANDLE h, DWORD code, LPVOID in, DWORD inSz,
-                      LPVOID out, DWORD outSz, DWORD* written) {
-    DWORD dummy = 0;
-    if (!written) written = &dummy;
-    return DeviceIoControl(h, code, in, inSz, out, outSz, written, NULL);
-}
-
 static void PrintObservation(const GAYM_OBSERVATION_V1& observation)
 {
     printf("[Observation] family=%lu caps=0x%08lX status=0x%08lX obs=%llu inj=%llu%s\n",

@@ -5,8 +5,8 @@
 typedef struct _UPPER_TRACE_ENTRY {
     ULONGLONG TimestampQpc;
     ULONG EventCode;
-    ULONG Status;
+    NTSTATUS Status;
 } UPPER_TRACE_ENTRY, *PUPPER_TRACE_ENTRY;
 
 VOID UpperTraceReset(VOID);
-VOID UpperTraceRecord(_In_ ULONG EventCode, _In_ ULONG Status);
+VOID UpperTraceRecord(_In_ ULONG EventCode, _In_ NTSTATUS Status);

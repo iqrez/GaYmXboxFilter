@@ -1,0 +1,22 @@
+GaYmXboxFilter Release Bundle
+Configuration : Release
+Commit        : 444721e
+Tag           : unreleased
+Generated     : 2026-03-28 05:26:04 -04:00
+
+Contents
+- driver-upper
+- driver-lower
+- tools (release bundle profile)
+- docs
+- scripts/prepare-test-machine.ps1
+- scripts/install-driver.ps1
+- scripts/uninstall-driver.ps1
+- scripts/smoke-test.ps1
+- scripts/release-check.ps1
+- scripts/transition-check.ps1
+
+Notes
+- release bundle excludes deep sniffers and maintainer-only packet probes
+- release bundle includes test certificates for local-machine trust bootstrap
+- dev-only jitter support remains disabled in non-debug driver builds

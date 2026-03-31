@@ -26,9 +26,12 @@ static VOID UpperEvtFileCleanup(_In_ WDFFILEOBJECT FileObject)
     }
 
     KeAcquireSpinLock(&filterContext->StateLock, &oldIrql);
-    filterContext->WriterSessionHeld = FALSE;
-    filterContext->OverrideEnabled = FALSE;
-    filterContext->HasInjectedReport = FALSE;
+    if (filterContext->WriterFileObject == FileObject) {
+        filterContext->WriterFileObject = NULL;
+        filterContext->WriterSessionHeld = FALSE;
+        filterContext->OverrideEnabled = FALSE;
+        filterContext->HasInjectedReport = FALSE;
+    }
     KeReleaseSpinLock(&filterContext->StateLock, oldIrql);
 }
 
@@ -119,6 +122,7 @@ NTSTATUS UpperDeviceInitialize(_In_ WDFDEVICE Device)
     RtlZeroMemory(context, sizeof(*context));
     context->Device = Device;
     context->LowerTarget = WdfDeviceGetIoTarget(Device);
+    context->WriterFileObject = NULL;
     context->IsAttached = TRUE;
     context->IsInD0 = FALSE;
     context->OverrideEnabled = FALSE;

@@ -23,9 +23,9 @@ if not exist "%OBJ%" mkdir "%OBJ%"
 pushd "%OUT%"
 
 if /I "%CONFIGURATION%"=="Release" (
-    set "CLIENT_FLAGS=/O2 /DNDEBUG"
+    set "CLIENT_FLAGS=/O2 /DNDEBUG /WX"
 ) else (
-    set "CLIENT_FLAGS=/Od /DDEBUG"
+    set "CLIENT_FLAGS=/Od /DDEBUG /WX"
 )
 
 echo === Building gaym_client.lib (%CONFIGURATION%) ===

@@ -1,18 +1,13 @@
 [CmdletBinding()]
 param(
-    [string]$HardwareId = 'HID\VID_045E&PID_02FF&IG_00',
+    [string]$HardwareId = 'USB\VID_045E&PID_02FF&IG_00',
     [string]$InstanceId,
-    [string]$DriverInf,
-    [string]$UpperDriverInf
+    [string]$DriverInf
 )
 
 if (-not $DriverInf) {
     $scriptRoot = Split-Path -Parent $PSCommandPath
-    $DriverInf = Join-Path $scriptRoot 'out\dev\driver\GaYmFilter.inf'
-}
-if (-not $UpperDriverInf) {
-    $scriptRoot = Split-Path -Parent $PSCommandPath
-    $UpperDriverInf = Join-Path $scriptRoot 'out\dev\upper\GaYmXInputFilter.inf'
+    $DriverInf = Join-Path $scriptRoot 'build\driver\GaYmFilter.inf'
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -26,22 +21,6 @@ if (-not (Test-Path $DriverInf)) {
 }
 
 $pnputil = "$env:SystemRoot\System32\pnputil.exe"
-
-if (Test-Path $UpperDriverInf) {
-    $upperOutput = & $pnputil /add-driver $UpperDriverInf /install 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw ("pnputil failed to add/install upper driver package.`n" + ($upperOutput -join [Environment]::NewLine))
-    }
-
-    Write-Host ($upperOutput -join [Environment]::NewLine)
-    Write-Host ''
-    Write-Host "Upper driver package staged: $UpperDriverInf"
-    Write-Host ''
-} else {
-    Write-Host "Upper driver package not present at $UpperDriverInf; skipping upper install."
-    Write-Host ''
-}
-
 $installOutput = & $pnputil /add-driver $DriverInf /install 2>&1
 if ($LASTEXITCODE -ne 0) {
     throw ("pnputil failed to add/install driver package.`n" + ($installOutput -join [Environment]::NewLine))
@@ -103,11 +82,11 @@ if (-not $hasGaYmFilter) {
 }
 
 if (-not $hasHidUsb) {
-    throw "HidUsb is not present in the live stack for $InstanceId. The filter is not attached on the supported HID-child path."
+    throw "HidUsb is not present in the live stack for $InstanceId. The filter is not attached on the USB HID path."
 }
 
 if ($restartExitCode -ne 0) {
     Write-Warning 'pnputil reported that additional reboot or device reconfiguration may still be pending, but the verified live stack already includes GaYmFilter.'
 }
 
-Write-Host 'GaYmFilter is present on the supported HID-child stack alongside HidUsb.'
+Write-Host 'GaYmFilter is present on the USB HID stack alongside HidUsb.'

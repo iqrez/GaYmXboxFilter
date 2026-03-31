@@ -1,0 +1,52 @@
+[Version]
+Signature   = "$Windows NT$"
+Class       = Extension
+ClassGuid   = {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+Provider    = %GAYM%
+ExtensionId = {9a8a33f1-4cb5-4fbe-9c52-cdc2306c5b31}
+CatalogFile = GaYmXInputFilter.cat
+DriverVer   = 03/30/2026,5.30.0.0
+PnpLockdown = 1
+
+[DestinationDirs]
+GaYmXInputFilter.CopyFiles = 12
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+GaYmXInputFilter.sys = 1
+
+[Manufacturer]
+%GAYM% = GaYm,NTamd64.10.0...18362
+
+[GaYm.NTamd64.10.0...18362]
+%GaYmXInputFilter.DeviceDesc% = GaYmXInputFilter_Install, HID\VID_045E&PID_02FF&IG_00
+
+[GaYmXInputFilter_Install.NT]
+CopyFiles = GaYmXInputFilter.CopyFiles
+
+[GaYmXInputFilter.CopyFiles]
+GaYmXInputFilter.sys
+
+[GaYmXInputFilter_Install.NT.Services]
+AddService = GaYmXInputFilter,,GaYmXInputFilter_Service
+
+[GaYmXInputFilter_Install.NT.Filters]
+AddFilter = GaYmXInputFilter,,GaYmXInputFilter_Filter_Install
+
+[GaYmXInputFilter_Filter_Install]
+FilterPosition = Upper
+
+[GaYmXInputFilter_Service]
+DisplayName    = %GaYmXInputFilter.ServiceDesc%
+ServiceType    = 1
+StartType      = 3
+ErrorControl   = 1
+ServiceBinary  = %12%\GaYmXInputFilter.sys
+
+[Strings]
+GAYM = "GaYm Controller"
+GaYmXInputFilter.DeviceDesc = "GaYm HID-Child Upper Filter Extension"
+GaYmXInputFilter.ServiceDesc = "GaYm HID Upper Filter"
+DiskName = "GaYm Controller Driver Package"

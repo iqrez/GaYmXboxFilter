@@ -5,12 +5,10 @@ cd /d "%~dp0"
 set "WDK_BIN=C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0"
 set "INF2CAT=%WDK_BIN%\x86\Inf2Cat.exe"
 set "SIGNTOOL=%WDK_BIN%\x64\signtool.exe"
-set "DRIVER_DIR=%~dp0out\dev\driver"
-set "UPPER_DIR=%~dp0out\dev\upper"
+set "DRIVER_DIR=%~dp0build\driver"
 set "DRIVER_INF=%DRIVER_DIR%\GaYmFilter.inf"
 set "DRIVER_SYS=%DRIVER_DIR%\GaYmFilter.sys"
 set "DRIVER_CAT=%DRIVER_DIR%\GaYmFilter.cat"
-set "UPPER_INF=%UPPER_DIR%\GaYmXInputFilter.inf"
 set "ATTACH_PS1=%~dp0attach_filter.ps1"
 
 echo ============================================
@@ -72,11 +70,7 @@ if errorlevel 1 (
 echo.
 
 echo [5/6] Installing and verifying filter attachment...
-if exist "%UPPER_INF%" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%ATTACH_PS1%" -DriverInf "%DRIVER_INF%" -UpperDriverInf "%UPPER_INF%"
-) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%ATTACH_PS1%" -DriverInf "%DRIVER_INF%"
-)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ATTACH_PS1%" -DriverInf "%DRIVER_INF%"
 if errorlevel 1 (
     echo FAILED: attach_filter.ps1 reported an installation or stack verification error.
     exit /b 1
@@ -95,8 +89,8 @@ echo ============================================
 echo  Deploy complete.
 echo  Driver package: %DRIVER_INF%
 echo  Verify runtime with:
-echo    %~dp0out\dev\tools\GaYmCLI.exe status
-echo    %~dp0out\dev\tools\MinimalTestFeeder.exe --scripted
+echo    %~dp0GaYmTestFeeder\GaYmCLI.exe status
+echo    %~dp0GaYmTestFeeder\MinimalTestFeeder.exe --scripted
 echo ============================================
 echo.
 exit /b 0

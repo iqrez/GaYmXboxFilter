@@ -6,7 +6,7 @@ param(
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $legacyBatch = Join-Path $repoRoot 'build_driver.bat'
-$signScript = Join-Path $PSScriptRoot 'sign-driver-packages.ps1'
+$signScript = Join-Path $PSScriptRoot 'sign-driver.ps1'
 $packageScript = Join-Path $PSScriptRoot 'package-bundle.ps1'
 $lowerStageRoot = if ($Configuration -eq 'Debug') {
     Join-Path $repoRoot 'out\dev\driver'

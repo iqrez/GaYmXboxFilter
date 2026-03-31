@@ -18,6 +18,64 @@ if (-not $UpperDriverInf) {
     $UpperDriverInf = Join-Path $repoRoot ("out\" + $profileSegment + '\upper\GaYmXInputFilter.inf')
 }
 
+function Resolve-DriverInfPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InfName
+    )
+
+    if (-not (Test-Path -LiteralPath $InputPath)) {
+        $parentPath = Split-Path -Parent $InputPath
+        if (-not $parentPath -or -not (Test-Path -LiteralPath $parentPath)) {
+            return $null
+        }
+
+        $candidatePaths = @(
+            (Join-Path $parentPath $InfName),
+            (Join-Path (Join-Path $parentPath 'package') $InfName)
+        )
+
+        foreach ($candidatePath in $candidatePaths) {
+            if (Test-Path -LiteralPath $candidatePath) {
+                return (Get-Item -LiteralPath $candidatePath).FullName
+            }
+        }
+
+        return $null
+    }
+
+    $inputItem = Get-Item -LiteralPath $InputPath
+    if (-not $inputItem.PSIsContainer) {
+        if ($inputItem.Extension -ine '.inf') {
+            throw "Driver package path must be an INF or directory: $InputPath"
+        }
+
+        return $inputItem.FullName
+    }
+
+    $candidatePaths = @(
+        (Join-Path $inputItem.FullName $InfName),
+        (Join-Path (Join-Path $inputItem.FullName 'package') $InfName)
+    )
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return (Get-Item -LiteralPath $candidatePath).FullName
+        }
+    }
+
+    $recursiveMatch = Get-ChildItem -LiteralPath $inputItem.FullName -Recurse -File -Filter $InfName -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($recursiveMatch) {
+        return $recursiveMatch.FullName
+    }
+
+    return $null
+}
+
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -105,6 +163,18 @@ function Remove-DriverPackage {
     }
 }
 
+function Resolve-InputPathOrNull {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InfName
+    )
+
+    return Resolve-DriverInfPath -InputPath $InputPath -InfName $InfName
+}
+
 function Test-InstanceRequiresReboot {
     param(
         [Parameter(Mandatory = $true)]
@@ -167,15 +237,20 @@ function Test-LiveStackRecovery {
 Write-Host "Target hardware ID: $HardwareId"
 Write-Host ''
 
-if (Test-Path -LiteralPath $UpperDriverInf) {
-    Remove-DriverPackage -InfPath $UpperDriverInf -Label 'upper'
+if ($resolvedUpperDriverInf = Resolve-InputPathOrNull -InputPath $UpperDriverInf -InfName 'GaYmXInputFilter.inf') {
+    Remove-DriverPackage -InfPath $resolvedUpperDriverInf -Label 'upper'
     Write-Host ''
 } else {
     Write-Host "Upper driver package not present at $UpperDriverInf; skipping upper removal."
     Write-Host ''
 }
 
-Remove-DriverPackage -InfPath $DriverInf -Label 'lower'
+$resolvedDriverInf = Resolve-InputPathOrNull -InputPath $DriverInf -InfName 'GaYmFilter.inf'
+if (-not $resolvedDriverInf) {
+    throw "Driver INF not found: $DriverInf"
+}
+
+Remove-DriverPackage -InfPath $resolvedDriverInf -Label 'lower'
 Write-Host ''
 
 if (-not $InstanceId) {

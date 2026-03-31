@@ -15,6 +15,9 @@ Current state:
   driver outputs under the selected configuration root
 - `build-tools.ps1` links against the staged client library and stages the
   curated user-mode toolset
+- `sign-driver.ps1` signs the staged upper/lower driver packages with the
+  repository test certificate and mirrors the signed artifacts into the
+  package layout
 - `install-driver.ps1` and `uninstall-driver.ps1` manage the live supported
   Xbox `02FF` HID-child stack
 - `package-bundle.ps1` creates the authoritative curated bundle from the staged

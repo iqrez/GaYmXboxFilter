@@ -4,7 +4,7 @@ Class       = Extension
 ClassGuid   = {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
 Provider    = %GAYM%
 ExtensionId = {9a8a33f1-4cb5-4fbe-9c52-cdc2306c5b31}
-CatalogFile = GaYmXInputFilter.cat
+CatalogFile=GaYmXInputFilter.cat
 DriverVer   = 03/31/2026,5.30.0.9
 PnpLockdown = 1
 

@@ -36,6 +36,7 @@ struct VerificationStep {
 struct ObservedState {
     bool connected = false;
     DWORD packetChanges = 0;
+    DWORD previousPacketNumber = 0;
     SHORT minLX = 0;
     SHORT maxLX = 0;
     SHORT minLY = 0;
@@ -124,7 +125,7 @@ static bool WaitForPad(DWORD timeoutMs, DWORD* index, XINPUT_STATE* state)
     return false;
 }
 
-static void UpdateObservedState(ObservedState* observed, const XINPUT_STATE* state, const XINPUT_STATE* baseline)
+static void UpdateObservedState(ObservedState* observed, const XINPUT_STATE* state)
 {
     const XINPUT_GAMEPAD* gamepad = &state->Gamepad;
 
@@ -149,8 +150,9 @@ static void UpdateObservedState(ObservedState* observed, const XINPUT_STATE* sta
     if (gamepad->bRightTrigger > observed->maxRT) observed->maxRT = gamepad->bRightTrigger;
     observed->buttonsOr |= gamepad->wButtons;
 
-    if (state->dwPacketNumber != baseline->dwPacketNumber) {
+    if (state->dwPacketNumber != observed->previousPacketNumber) {
         observed->packetChanges++;
+        observed->previousPacketNumber = state->dwPacketNumber;
     }
 }
 
@@ -340,6 +342,7 @@ static ObservedState RunStep(HANDLE device, DWORD padIndex, const VerificationSt
 {
     ObservedState observed = {};
     DWORD start = GetTickCount();
+    observed.previousPacketNumber = baseline->dwPacketNumber;
 
     while (GetTickCount() - start < step->durationMs) {
         if (!InjectReport(device, &step->report)) {
@@ -349,7 +352,7 @@ static ObservedState RunStep(HANDLE device, DWORD padIndex, const VerificationSt
 
         XINPUT_STATE state = {};
         if (XInputGetState(padIndex, &state) == ERROR_SUCCESS) {
-            UpdateObservedState(&observed, &state, baseline);
+            UpdateObservedState(&observed, &state);
         }
 
         Sleep(8);
@@ -635,8 +638,9 @@ int main()
     steps[4].durationMs = 700;
     steps[4].report.Buttons[0] = GAYM_BTN_A;
 
-    bool allPassed = true;
+    bool allPassed = false;
     VerificationMode verificationMode = VerificationMode::None;
+    bool xinputVerified = false;
     DWORD padIndex = 0;
     XINPUT_STATE baseline = {};
     bool useXinput = WaitForPad(2000, &padIndex, &baseline);
@@ -662,11 +666,14 @@ int main()
         }
 
         if (xinputAllPassed && xinputObservedAnyChange) {
-            allPassed = true;
+            xinputVerified = true;
             verificationMode = VerificationMode::XInputOverride;
         } else {
             std::printf("XInput was visible but did not reflect injected state reliably.\n");
-            allPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));
+            bool counterFallbackPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));
+            if (!counterFallbackPassed) {
+                std::printf("Counter fallback diagnostics did not verify the override path either.\n");
+            }
             verificationMode = VerificationMode::CounterFallback;
         }
     } else {
@@ -689,21 +696,31 @@ int main()
 
         std::printf("XInput not visible in this shell. Falling back to raw HID report verification.\n");
         verificationMode = VerificationMode::RawHid;
+        bool rawHidAllPassed = true;
         for (const auto& step : steps) {
             HidObservation observed = RunHidStep(device, hid, &step, baselineReport, inputReportLength);
             if (!PrintHidEvaluation(&step, &observed)) {
-                allPassed = false;
+                rawHidAllPassed = false;
             }
             Sleep(120);
         }
 
+        if (rawHidAllPassed) {
+            std::printf("Raw HID diagnostics succeeded, but this release gate requires a visible XInput override.\n");
+        }
+
         CloseHandle(hid);
-        if (!allPassed) {
+        if (!rawHidAllPassed) {
             std::printf("Raw HID reads were not available. ");
-            allPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));
+            bool counterFallbackPassed = RunCounterFallback(device, steps, ARRAYSIZE(steps));
+            if (!counterFallbackPassed) {
+                std::printf("Counter fallback diagnostics did not verify the override path either.\n");
+            }
             verificationMode = VerificationMode::CounterFallback;
         }
     }
+
+    allPassed = xinputVerified;
 
     DisableOverride(device);
     if (writerHeld) {

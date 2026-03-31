@@ -144,7 +144,7 @@ foreach ($toolFile in @('GaYmCLI.exe', 'GaYmFeeder.exe', 'MinimalTestFeeder.exe'
 }
 Copy-IfPresent -Source (Join-Path $stageRoot 'verification\autoverify-state.json') -Destination (Join-Path $bundleStageRoot 'verification\autoverify-state.json')
 
-foreach ($scriptName in @('install-driver.ps1', 'uninstall-driver.ps1', 'smoke-test.ps1', 'build-driver.ps1', 'build-tools.ps1', 'build-client.ps1', 'README.md')) {
+foreach ($scriptName in @('install-driver.ps1', 'uninstall-driver.ps1', 'smoke-test.ps1', 'build-driver.ps1', 'build-tools.ps1', 'build-client.ps1', 'sign-driver.ps1', 'sign-driver-packages.ps1', 'README.md')) {
     Copy-IfPresent -Source (Join-Path $repoRoot "scripts\$scriptName") -Destination (Join-Path $bundleRoot "scripts\$scriptName")
 }
 foreach ($docName in @('ARCHITECTURE.md', 'ARCHITECTURE_DECISIONS.md', 'diagnostics.md', 'MAINTAINER_TOOLS.md')) {

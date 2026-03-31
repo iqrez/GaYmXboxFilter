@@ -19,6 +19,64 @@ if (-not $UpperDriverInf) {
     $UpperDriverInf = Join-Path $repoRoot ("out\" + $profileSegment + '\upper\GaYmXInputFilter.inf')
 }
 
+function Resolve-DriverInfPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InfName
+    )
+
+    if (-not (Test-Path -LiteralPath $InputPath)) {
+        $parentPath = Split-Path -Parent $InputPath
+        if (-not $parentPath -or -not (Test-Path -LiteralPath $parentPath)) {
+            return $null
+        }
+
+        $candidatePaths = @(
+            (Join-Path $parentPath $InfName),
+            (Join-Path (Join-Path $parentPath 'package') $InfName)
+        )
+
+        foreach ($candidatePath in $candidatePaths) {
+            if (Test-Path -LiteralPath $candidatePath) {
+                return (Get-Item -LiteralPath $candidatePath).FullName
+            }
+        }
+
+        return $null
+    }
+
+    $inputItem = Get-Item -LiteralPath $InputPath
+    if (-not $inputItem.PSIsContainer) {
+        if ($inputItem.Extension -ine '.inf') {
+            throw "Driver package path must be an INF or directory: $InputPath"
+        }
+
+        return $inputItem.FullName
+    }
+
+    $candidatePaths = @(
+        (Join-Path $inputItem.FullName $InfName),
+        (Join-Path (Join-Path $inputItem.FullName 'package') $InfName)
+    )
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return (Get-Item -LiteralPath $candidatePath).FullName
+        }
+    }
+
+    $recursiveMatch = Get-ChildItem -LiteralPath $inputItem.FullName -Recurse -File -Filter $InfName -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($recursiveMatch) {
+        return $recursiveMatch.FullName
+    }
+
+    throw "Unable to locate $InfName under $InputPath."
+}
+
 function Save-InstallState {
     param(
         [string]$Phase,
@@ -116,28 +174,33 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Run install-driver.ps1 from an elevated PowerShell prompt.'
 }
 
-if (-not (Test-Path -LiteralPath $DriverInf)) {
-    throw "Driver INF not found: $DriverInf"
+$requestedDriverInf = $DriverInf
+$resolvedDriverInf = Resolve-DriverInfPath -InputPath $DriverInf -InfName 'GaYmFilter.inf'
+if (-not $resolvedDriverInf) {
+    throw "Driver INF not found: $requestedDriverInf"
 }
 
-$expectUpper = Test-Path -LiteralPath $UpperDriverInf
+$resolvedUpperDriverInf = $null
+$resolvedUpperDriverInf = Resolve-DriverInfPath -InputPath $UpperDriverInf -InfName 'GaYmXInputFilter.inf'
+$expectUpper = [bool]$resolvedUpperDriverInf
+
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
 $upperInstall = $null
 $lowerInstall = $null
 
 if ($expectUpper) {
-    $upperInstall = Invoke-DriverInstall -InfPath $UpperDriverInf -Label 'upper'
+    $upperInstall = Invoke-DriverInstall -InfPath $resolvedUpperDriverInf -Label 'upper'
 
     Write-Host $upperInstall.Text
     Write-Host ''
-    Write-Host "Upper driver package staged: $UpperDriverInf"
+    Write-Host "Upper driver package staged: $resolvedUpperDriverInf"
     Write-Host ''
 } else {
     Write-Host "Upper driver package not present at $UpperDriverInf; skipping upper install."
     Write-Host ''
 }
 
-$lowerInstall = Invoke-DriverInstall -InfPath $DriverInf -Label 'lower'
+$lowerInstall = Invoke-DriverInstall -InfPath $resolvedDriverInf -Label 'lower'
 $rebootRequired = (($upperInstall -ne $null) -and $upperInstall.RebootRequired) -or $lowerInstall.RebootRequired
 
 if (-not $InstanceId) {

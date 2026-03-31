@@ -75,6 +75,20 @@ Still open after this baseline:
 - upper semantic observation now depends on obtaining at least one real native
   report from the live stack and should fail rather than synthesize state
 
+## Signing & WHQL readiness - test cert in place
+
+- added a repo-local self-signed test code-signing certificate under
+  `scripts/` for repeatable package signing
+- added `scripts/sign-driver.ps1` as the authoritative upper/lower package
+  signing step for `out/dev/` and `out/release/`
+- kept the signed package layout mirrored so install and uninstall workflows
+  can consume either the top-level staged INF files or the `package/`
+  subdirectory copies
+- updated the release build flow so the staged packages are signed before the
+  bundle refresh and install verification steps
+- the repo is now structurally ready for WHQL submission prep, pending the
+  actual Microsoft submission artifacts and attestation/signing process
+
 ## Next Recommended Slice
 
 1. Expand automated regression coverage for writer conflict, D0 transitions,

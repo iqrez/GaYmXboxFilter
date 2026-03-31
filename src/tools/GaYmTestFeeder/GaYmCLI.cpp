@@ -49,8 +49,7 @@ static void PrintUsage()
     printf("  GaYmCLI jitter <min_us> <max_us>   Set timing jitter range\n");
     printf("  GaYmCLI jitter off                 Disable jitter\n");
     printf("  GaYmCLI test  [adapter_slot]       Inject a test report\n");
-    printf("\nNote: producer control prefers \\\\.\\GaYmXInputFilterCtl.");
-    printf(" Maintainer diagnostics may fall back to \\\\.\\GaYmFilterCtl.\n");
+    printf("\nNote: \\\\.\\GaYmXInputFilterCtl is the sole control path.\n");
 }
 
 static void PrintObservation(const GAYM_OBSERVATION_V1& observation)
@@ -88,7 +87,7 @@ static int CmdStatus()
         printf("No supported Xbox 02FF adapter found.\n");
         printf("  The package may be staged but not attached to the live device stack.\n");
         printf("  Run scripts\\install-driver.ps1 -Configuration Release as Administrator to bind the staged upper/lower packages to the live stack.\n");
-        printf("  The authoritative operator path is \\\\.\\GaYmXInputFilterCtl; \\\\.\\GaYmFilterCtl remains maintainer diagnostics only when attached.\n");
+        printf("  The authoritative control path is \\\\.\\GaYmXInputFilterCtl.\n");
         return 0;
     }
 
@@ -150,7 +149,7 @@ static int CmdOverride(int argc, char* argv[], bool enable)
     HANDLE h = OpenDevice(argc, argv, 2);
     if (h == INVALID_HANDLE_VALUE) return 1;
 
-    printf("Producer control path: upper preferred, diagnostic lower fallback only when needed.\n");
+    printf("Control path: \\\\.\\GaYmXInputFilterCtl (sole control plane).\n");
     if (!AcquireWriterSession(h)) {
         fprintf(stderr, "Failed to acquire writer session (error %lu).\n", GetLastError());
         CloseHandle(h);
@@ -187,7 +186,7 @@ static int CmdJitter(int argc, char* argv[])
         return 1;
     }
 
-    printf("Maintainer diagnostic request: lower-path fallback enabled when required.\n");
+    printf("Control path: \\\\.\\GaYmXInputFilterCtl (sole control plane).\n");
     GAYM_JITTER_CONFIG jcfg = {};
 
     if (_stricmp(argv[2], "off") == 0) {
@@ -218,7 +217,7 @@ static int CmdTest(int argc, char* argv[])
     HANDLE h = OpenDevice(argc, argv, 2);
     if (h == INVALID_HANDLE_VALUE) return 1;
 
-    printf("Producer control path: upper preferred, diagnostic lower fallback only when needed.\n");
+    printf("Control path: \\\\.\\GaYmXInputFilterCtl (sole control plane).\n");
     if (!AcquireWriterSession(h)) {
         fprintf(stderr, "Failed to acquire writer session (error %lu).\n", GetLastError());
         CloseHandle(h);

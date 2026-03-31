@@ -21,8 +21,7 @@ Current implementation state:
   primary device info, and semantic observation for the supported target
 - semantic observation is materialized from parsed completed reads on the
   upper path rather than mirrored directly from injection input
-- the lower driver remains native observation and maintainer diagnostics
-  fallback only
+- the lower driver is forwarding plus native observation only
 - `scripts/` is the supported Debug/Release build, install, verify, and
   packaging workflow
 
@@ -38,8 +37,7 @@ Responsibilities:
 - The upper driver owns authoritative override state, writer enforcement,
   semantic-to-native injection, XInput read replacement, primary device info,
   and semantic observation on the supported target.
-- The lower driver owns native-path observation and adapter-specific
-  diagnostics that remain outside the producer contract.
+- The lower driver owns native-path forwarding and native observation capture.
 - Shared ABI headers own protocol/versioning and the portable semantic shapes.
 
 ## Source-of-Truth Layout
@@ -130,7 +128,8 @@ Owns:
 - reconnect/retry logic
 - bounded send loops and basic rate control
 - semantic observation queries
-- optional access to maintainer diagnostics for trusted tools
+- compatibility handling for legacy API entry points that still resolve through
+  the upper control plane
 
 Does not own:
 
@@ -156,24 +155,23 @@ Does not own:
 
 - broad unsupported hardware enumeration logic
 - producer-specific policy logic
-- maintainer-only raw diagnostic APIs
+- public raw diagnostic contracts
 
 ### Lower driver
 
 Owns:
 
-- native-path observation
-- native packet preservation for diagnostics
-- optional native-to-semantic parse support used by observation logic
-- lower trace snapshots
-- native-path regression support for `joy.cpl` / WinMM validation
-- fallback-only maintainer diagnostics for unsupported IOCTLs
+- native-path request forwarding
+- native-path observation capture
+- device-family parsing needed to interpret observed native reports
+- lower trace and forwarding diagnostics
 
 Does not own:
 
+- any producer-facing control device
 - authoritative producer write ownership
 - public mutation surface for producers
-- broad user-facing control responsibilities
+- public semantic observation authority
 
 ### Shared ABI
 
@@ -237,7 +235,8 @@ Rules:
   adapters
 - it is not a dump of everything the driver knows
 - exotic, transport-specific, or reverse-engineering-specific details stay out
-- native/raw snapshots remain separate maintainer diagnostics
+- native/raw snapshots remain separate maintainer concerns, not part of the
+  producer control surface
 
 ## Writer Ownership
 
@@ -251,8 +250,7 @@ Rules:
 - writer ownership is revoked on file cleanup, device removal, surprise
   removal, D0 exit, or explicit release
 - semantic observation and device-info queries may still be read by non-writers
-- the lower path remains diagnostic fallback only and is not the producer
-  contract
+- `\\.\GaYmXInputFilterCtl` is the only control device in the live stack
 
 ## Live Validation Rule
 

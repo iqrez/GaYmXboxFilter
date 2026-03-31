@@ -169,7 +169,7 @@ if (Test-Path -LiteralPath $autoVerify) {
 if (Test-Path -LiteralPath $xinputCheck) {
     Write-Host "Using staged XInputCheck: $xinputCheck"
 }
-Write-Host 'Observation/control preference: upper control path first, diagnostic lower only as fallback.'
+Write-Host 'Observation/control preference: upper driver is the sole control plane; lower driver is forwarding and native observation only.'
 Write-Host ''
 
 Push-Location $stageRoot

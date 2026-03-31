@@ -14,7 +14,6 @@
 VOID GaYmEvtDriverUnload(_In_ WDFDRIVER Driver)
 {
     UNREFERENCED_PARAMETER(Driver);
-    GaYmDeleteControlDevice();
     GAYM_LOG_INFO("DriverUnload: GaYmFilter unloading");
 }
 

@@ -15,17 +15,18 @@ Build and validate only the supported v1 platform slice:
 
 Anything outside that matrix is unsupported unless explicitly requested.
 
-The current implementation state is transitional:
+The current implementation state is:
 
-- `gaym_client` exists and is the preferred producer entry point
-- `GAYM_OBSERVATION` is already present in the shared ABI
+- `gaym_client` is the supported producer entry point
+- `GAYM_OBSERVATION` is present in the shared ABI
 - `out/dev/client/` is the staged client output
-- operator control ownership is still waiting on the finished upper-driver
-  implementation
+- `\\.\GaYmXInputFilterCtl` is the sole control device
+- the lower driver has no producer-facing control device
 
 ## Source of Truth
 
 - `src/lower/`: lower-filter source and INF
+- `src/upper/`: upper-filter source and INF
 - `src/shared/`: protocol and semantic ABI
 - `src/client/`: producer-facing client library boundary
 - `src/tools/GaYmTestFeeder/`: prototype producer and verifier tools
@@ -38,19 +39,16 @@ why.
 ## Current Safe Workflow
 
 1. Read `PROJECT_STATE.md` before changing code or docs.
-2. Use the transitional scripts to build the migrated lower-driver and tools.
-3. Treat `gaym_client` as the intended producer integration boundary, even if
-   the concrete implementation is still being introduced.
-4. Use the built tools from `out/dev/` for bounded validation.
+2. Use the scripts under `scripts/` for builds and live validation.
+3. Treat `gaym_client` as the producer integration boundary.
+4. Use the built tools from `out/dev/` or `out/release/` for bounded
+   validation.
 
 ## Current Architectural Truth
 
-- The lower filter is still the only implemented kernel mutation surface
-  today.
-- The lower filter still exposes `\\.\GaYmFilterCtl` as the maintainer
-  diagnostic path.
-- The producer control path is `\\.\GaYmXInputFilterCtl`, but ownership is
-  still transitional until the upper driver is finished.
+- The upper filter is the only kernel control surface.
+- The sole control path is `\\.\GaYmXInputFilterCtl`.
+- The lower filter is forwarding plus native observation only.
 - Producers must not learn or pack native HID layouts.
 - Single-writer ownership is part of the v1 platform contract.
 - Semantic observation is a first-class platform contract, not a debug dump.

@@ -19,6 +19,7 @@ typedef struct _UPPER_DEVICE_CONTEXT {
     BOOLEAN IsInD0;
     BOOLEAN HasInjectedReport;
     BOOLEAN HasObservedReport;
+    GAYM_JITTER_CONFIG JitterConfig;
     ULONG ReportsInjected;
     ULONG ReportsObserved;
     volatile LONG ReadRequestsSeen;
@@ -58,12 +59,4 @@ NTSTATUS UpperDeviceParseNativeReport(
     _In_reads_bytes_(InputSize) const UCHAR* InputBuffer,
     _In_ ULONG InputSize,
     _Out_ GAYM_REPORT* Report);
-NTSTATUS UpperDeviceSendLowerControlIoctl(
-    _In_ PUPPER_DEVICE_CONTEXT Context,
-    _In_ ULONG IoControlCode,
-    _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
-    _In_ ULONG InputBufferLength,
-    _Out_writes_bytes_opt_(OutputBufferLength) PVOID OutputBuffer,
-    _In_ ULONG OutputBufferLength,
-    _Out_opt_ PULONG_PTR BytesReturned);
 VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context);

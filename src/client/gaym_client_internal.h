@@ -10,8 +10,8 @@ BOOL gaym_client_send_ioctl(
     LPVOID outputBuffer,
     DWORD outputSize,
     LPDWORD bytesReturned);
-HANDLE gaym_client_open_diagnostic_control_handle(void);
-BOOL gaym_client_send_ioctl_with_diagnostic_fallback(
+HANDLE gaym_client_open_control_handle(void);
+BOOL gaym_client_send_ioctl_with_upper_fallback(
     HANDLE device,
     DWORD code,
     LPVOID inputBuffer,

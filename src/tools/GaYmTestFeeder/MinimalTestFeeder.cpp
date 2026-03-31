@@ -286,7 +286,7 @@ int main(int argc, char* argv[]) {
     printf("GaYm Xbox 02FF Test Feeder v2.0\n");
     printf("Mode: %s\n", scripted ? "SCRIPTED (30s auto-test)" : "KEYBOARD (manual)");
     printf("sizeof(GAYM_REPORT) = %zu bytes\n\n", sizeof(GAYM_REPORT));
-    printf("Control: producer path prefers \\\\.\\GaYmXInputFilterCtl; diagnostics may fall back to \\\\.\\GaYmFilterCtl\n");
+    printf("Control: sole control path is \\\\.\\GaYmXInputFilterCtl\n");
 
     HANDLE hDevice = gaym::client::OpenSupportedAdapter(0);
     if (hDevice == INVALID_HANDLE_VALUE) {

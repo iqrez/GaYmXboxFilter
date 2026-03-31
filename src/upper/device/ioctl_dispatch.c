@@ -69,6 +69,25 @@ static NTSTATUS UpperStoreInjectedReport(
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS UpperStoreJitterConfig(
+    _In_ PUPPER_DEVICE_CONTEXT Context,
+    _In_ WDFREQUEST Request)
+{
+    const GAYM_JITTER_CONFIG* config;
+    NTSTATUS status;
+    KIRQL oldIrql;
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*config), (PVOID*)&config, NULL);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    RtlCopyMemory(&Context->JitterConfig, config, sizeof(*config));
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
+    return STATUS_SUCCESS;
+}
+
 static BOOLEAN UpperIoctlRequiresFileObject(_In_ ULONG IoControlCode)
 {
     switch (IoControlCode) {
@@ -200,6 +219,7 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         UpperDeviceUpdateObservation(Context);
         return UpperCopyOutputBuffer(Request, &Context->LastObservation, sizeof(Context->LastObservation));
     case IOCTL_GAYM_SET_JITTER:
+        return UpperStoreJitterConfig(Context, Request);
     case IOCTL_GAYM_QUERY_SNAPSHOT:
     case IOCTL_GAYM_CAPTURE_OBSERVATION:
         return STATUS_NOT_IMPLEMENTED;

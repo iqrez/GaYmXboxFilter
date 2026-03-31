@@ -17,17 +17,16 @@ surface.
 - public semantic mutation helpers
 - raw HID packet builders exposed to producers
 - release-bundle tools that are meant for normal operator use
+- any new lower-driver user-mode control surface
 
-## Control Paths
+## Control Path
 
-- operator control path: `\\.\GaYmXInputFilterCtl`
-- maintainer diagnostic path: `\\.\GaYmFilterCtl`
+- sole control path: `\\.\GaYmXInputFilterCtl`
 
-The operator path is the authoritative mutation and semantic observation
-surface for normal use. The maintainer path exists so diagnostics can remain
-adapter-specific without leaking into the producer contract. Producer-facing
-tools should prefer the upper path first. The lower path remains a
-compatibility and diagnostics escape hatch only.
+The upper path is the authoritative mutation and semantic observation surface
+for both operators and maintainers. The lower driver remains in the stack only
+for forwarding and native observation capture; it no longer exposes a separate
+user-mode control device.
 
 ## Repo Rule
 

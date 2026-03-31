@@ -15,17 +15,17 @@ with:
 - one minimal semantic observation contract
 - one stable producer-facing client boundary
 - one authoritative upper-driver control and observation path
-- one maintainer-only lower diagnostic fallback
+- one forwarding-and-observation lower filter with no producer control surface
 
 ## Current Reality
 
 - `src/upper/` is the authoritative upper-driver implementation for the
   supported Xbox `02FF` HID child
-- `src/lower/` remains the native observation and maintainer-diagnostic
-  fallback layer
+- `src/lower/` is the lower forwarding and native-observation layer
 - `src/shared/` contains the shared ABI, including `GAYM_OBSERVATION`
 - `src/client/` contains `gaym_client` as the stable producer-facing boundary
-- producer-facing tools now prefer the upper control device first
+- producer-facing tools resolve control, semantic observation, and primary
+  device-info queries through the upper control device only
 - `scripts/` is the supported build, install, uninstall, verify, and packaging
   workflow
 - `out/dev/` and `out/release/` are the staged output roots
@@ -48,25 +48,25 @@ Completed in the current baseline:
 - made the upper driver the authoritative owner of writer sessions, override
   state, semantic report injection, primary device info, and semantic
   observation for the supported Xbox `02FF` target
-- narrowed the lower driver to native observation and maintainer diagnostics,
-  with lower-only fallback retained for unsupported diagnostic IOCTLs
-- aligned the curated Release bundle and live verification flow with the
-  staged `out/release` path
+- removed the lower control device and all transitional lower control logic
+- narrowed the lower driver to native observation and request forwarding only
+- aligned the curated Release bundle and live verification flow with the staged
+  `out/release` path
 
 Still open after this baseline:
 
 - split the large lower-driver and tool sources into more stable modules
 - extend automated regression coverage around writer conflicts and PnP/power
   transitions
-- retire the remaining lower-control compatibility paths once diagnostics are
-  explicitly isolated from producer-facing flows
+- decide whether currently unsupported diagnostic IOCTLs should be implemented
+  on the upper path or explicitly retired from tooling
 
 ## Known Risks
 
 - the supported v1 hardware target is still intentionally narrow: one Xbox
   `02FF` HID child
-- the lower diagnostic path still exists and must not regain producer-facing
-  responsibility
+- unsupported diagnostic IOCTLs must not quietly regress into new producer
+  entry points on the lower stack
 - live driver validation requires paired upper/lower INF `DriverVer` bumps, or
   Windows may keep older active packages bound to the device stack
 
@@ -75,5 +75,5 @@ Still open after this baseline:
 1. Expand automated regression coverage for writer conflict, D0 transitions,
    and surprise removal.
 2. Continue module extraction in `src/lower/` and the migrated tool sources.
-3. Remove the remaining lower-control compatibility surface after diagnostics
-   no longer depend on it.
+3. Decide the long-term fate of snapshot/capture compatibility APIs that now
+   resolve only through the upper control plane.

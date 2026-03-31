@@ -19,8 +19,8 @@ Current state:
   Xbox `02FF` HID-child stack
 - `package-bundle.ps1` creates the authoritative curated bundle from the staged
   outputs under `out/dev/` or `out/release/`
-- `smoke-test.ps1` runs the staged upper-first CLI/feeder/AutoVerify flow from
-  `out/dev/` or `out/release/`
+- `smoke-test.ps1` runs the staged upper-control CLI/feeder/AutoVerify flow
+  from `out/dev/` or `out/release/`
 
 Live install rule:
 

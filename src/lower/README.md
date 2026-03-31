@@ -1,22 +1,21 @@
 # Lower Driver
 
-Current home for the authoritative `GaYmFilter` lower-driver prototype.
+`src/lower/` is the source-of-truth home for the `GaYmFilter` lower filter.
 
-This tree is intentionally scoped to lower-path diagnostics and native capture.
-It remains prototype-grade, and any mutation, override, or producer-facing
-control behavior that still lives here is transitional only. That behavior is
-expected to move out of the lower driver in a later phase.
+This tree is intentionally scoped to lower-path forwarding and native
+observation capture only.
 
 Current lower responsibilities:
 
-- native-path observation
-- request forwarding and completion handling
-- diagnostic capture and trace materialization
+- request forwarding to the real HID target
+- completion handling for native read traffic
+- native observation capture and parsing
 - device-family parsing needed to interpret observed native reports
 
 Not lower responsibilities:
 
+- any producer-facing control device
 - authoritative writer ownership
 - producer-facing semantic control
-- long-term override state
+- override state management
 - public client ABI shaping

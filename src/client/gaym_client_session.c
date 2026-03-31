@@ -2,8 +2,6 @@
 
 #include "gaym_client_internal.h"
 
-#include <setupapi.h>
-
 #include <strsafe.h>
 
 static HANDLE gaym_client_open_path_handle(LPCWSTR path)
@@ -23,9 +21,9 @@ static HANDLE gaym_client_open_upper_control_handle(void)
     return gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_UPPER_W);
 }
 
-HANDLE gaym_client_open_diagnostic_control_handle(void)
+HANDLE gaym_client_open_control_handle(void)
 {
-    return gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_DIAGNOSTIC_W);
+    return gaym_client_open_upper_control_handle();
 }
 
 static BOOL gaym_client_try_append_path(
@@ -57,19 +55,6 @@ static DWORD gaym_client_append_preferred_control_paths(
             return 1;
         }
         if (!gaym_client_try_append_path(devices, capacity, 0, GAYM_CONTROL_DEVICE_UPPER_W, 0)) {
-            SetLastError(ERROR_INSUFFICIENT_BUFFER);
-            return 0;
-        }
-        return 1;
-    }
-
-    handle = gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_DIAGNOSTIC_W);
-    if (handle != INVALID_HANDLE_VALUE) {
-        CloseHandle(handle);
-        if (devices == NULL || capacity == 0) {
-            return 1;
-        }
-        if (!gaym_client_try_append_path(devices, capacity, 0, GAYM_CONTROL_DEVICE_DIAGNOSTIC_W, 0)) {
             SetLastError(ERROR_INSUFFICIENT_BUFFER);
             return 0;
         }
@@ -120,9 +105,6 @@ void gaym_client_close_session(PGAYM_CLIENT_SESSION session)
 BOOL gaym_client_has_control_device(void)
 {
     HANDLE handle = gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_UPPER_W);
-    if (handle == INVALID_HANDLE_VALUE) {
-        handle = gaym_client_open_path_handle(GAYM_CONTROL_DEVICE_DIAGNOSTIC_W);
-    }
 
     if (handle == INVALID_HANDLE_VALUE) {
         return FALSE;
@@ -137,63 +119,9 @@ DWORD gaym_client_enumerate_supported_adapters(
     DWORD capacity,
     DWORD* totalCount)
 {
-    HDEVINFO devInfo;
-    SP_DEVICE_INTERFACE_DATA ifData;
-    DWORD foundCount = 0;
-    DWORD storedCount = 0;
+    DWORD foundCount;
 
     foundCount = gaym_client_append_preferred_control_paths(devices, capacity);
-    storedCount = foundCount;
-    if (foundCount != 0) {
-        if (totalCount != NULL) {
-            *totalCount = foundCount;
-        }
-        return foundCount;
-    }
-
-    devInfo = SetupDiGetClassDevsW(
-        &GUID_DEVINTERFACE_GAYM_FILTER,
-        NULL,
-        NULL,
-        DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-    if (devInfo != INVALID_HANDLE_VALUE) {
-        ZeroMemory(&ifData, sizeof(ifData));
-        ifData.cbSize = sizeof(ifData);
-
-        for (DWORD idx = 0;
-             SetupDiEnumDeviceInterfaces(devInfo, NULL, &GUID_DEVINTERFACE_GAYM_FILTER, idx, &ifData);
-             ++idx) {
-            DWORD needed = 0;
-            PSP_DEVICE_INTERFACE_DETAIL_DATA_W detail = NULL;
-            BOOL copied = FALSE;
-
-            SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, NULL, 0, &needed, NULL);
-            if (needed == 0) {
-                continue;
-            }
-
-            detail = (PSP_DEVICE_INTERFACE_DETAIL_DATA_W)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, needed);
-            if (detail == NULL) {
-                SetupDiDestroyDeviceInfoList(devInfo);
-                SetLastError(ERROR_OUTOFMEMORY);
-                return 0;
-            }
-
-            detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
-            if (SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, detail, needed, NULL, NULL)) {
-                copied = gaym_client_try_append_path(devices, capacity, storedCount, detail->DevicePath, (INT)idx);
-                ++foundCount;
-                if (copied) {
-                    ++storedCount;
-                }
-            }
-
-            HeapFree(GetProcessHeap(), 0, detail);
-        }
-
-        SetupDiDestroyDeviceInfoList(devInfo);
-    }
-
     if (totalCount != NULL) {
         *totalCount = foundCount;
     }
@@ -201,11 +129,6 @@ DWORD gaym_client_enumerate_supported_adapters(
     if (foundCount == 0) {
         SetLastError(ERROR_FILE_NOT_FOUND);
         return 0;
-    }
-
-    if (devices != NULL && storedCount < foundCount) {
-        SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return storedCount;
     }
 
     return foundCount;
@@ -277,7 +200,6 @@ BOOL gaym_client_open_supported_adapter_session(int index, PGAYM_CLIENT_SESSION 
 BOOL gaym_client_query_device_info_handle(HANDLE device, PGAYM_DEVICE_INFO info)
 {
     HANDLE upperHandle;
-    HANDLE fallbackHandle;
 
     if (info == NULL) {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -305,31 +227,12 @@ BOOL gaym_client_query_device_info_handle(HANDLE device, PGAYM_DEVICE_INFO info)
         device,
         (DWORD)IOCTL_GAYM_QUERY_DEVICE,
         NULL,
-        0,
-        info,
-        sizeof(*info),
-        NULL)) {
-        return TRUE;
-    }
-
-    fallbackHandle = gaym_client_open_diagnostic_control_handle();
-    if (fallbackHandle == INVALID_HANDLE_VALUE) {
-        return FALSE;
-    }
-
-    if (gaym_client_send_ioctl(
-            fallbackHandle,
-            (DWORD)IOCTL_GAYM_QUERY_DEVICE,
-            NULL,
             0,
             info,
             sizeof(*info),
             NULL)) {
-        CloseHandle(fallbackHandle);
         return TRUE;
     }
-
-    CloseHandle(fallbackHandle);
     return FALSE;
 }
 
@@ -411,7 +314,7 @@ BOOL gaym_client_configure_jitter_handle(HANDLE device, const GAYM_JITTER_CONFIG
         return FALSE;
     }
 
-    return gaym_client_send_ioctl_with_diagnostic_fallback(
+    return gaym_client_send_ioctl_with_upper_fallback(
         device,
         (DWORD)IOCTL_GAYM_SET_JITTER,
         (LPVOID)config,

@@ -28,7 +28,7 @@ BOOL gaym_client_send_ioctl(
         NULL);
 }
 
-BOOL gaym_client_send_ioctl_with_diagnostic_fallback(
+BOOL gaym_client_send_ioctl_with_upper_fallback(
     HANDLE device,
     DWORD code,
     LPVOID inputBuffer,
@@ -53,7 +53,7 @@ BOOL gaym_client_send_ioctl_with_diagnostic_fallback(
     }
 
     originalError = GetLastError();
-    fallbackHandle = gaym_client_open_diagnostic_control_handle();
+    fallbackHandle = gaym_client_open_control_handle();
     if (fallbackHandle == INVALID_HANDLE_VALUE) {
         SetLastError(originalError);
         return FALSE;

@@ -9,7 +9,6 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(UPPER_CONTROL_DEVICE_CONTEXT, UpperControlGet
 
 DECLARE_CONST_UNICODE_STRING(g_UpperCtlDeviceName, L"\\Device\\GaYmXInputFilterCtl");
 DECLARE_CONST_UNICODE_STRING(g_UpperCtlSymLink, L"\\DosDevices\\GaYmXInputFilterCtl");
-DECLARE_CONST_UNICODE_STRING(g_LowerCtlDeviceName, L"\\Device\\GaYmFilterCtl");
 
 static WDFDEVICE g_UpperControlDevice;
 
@@ -222,6 +221,7 @@ NTSTATUS UpperDeviceInitialize(_In_ WDFDEVICE Device)
     context->HasInjectedReport = FALSE;
     context->HasObservedReport = FALSE;
     KeInitializeSpinLock(&context->StateLock);
+    RtlZeroMemory(&context->JitterConfig, sizeof(context->JitterConfig));
     RtlZeroMemory(&context->LastInjectedReport, sizeof(context->LastInjectedReport));
     RtlZeroMemory(&context->LastObservedReport, sizeof(context->LastObservedReport));
     RtlZeroMemory(&context->LastDeviceInfo, sizeof(context->LastDeviceInfo));
@@ -299,69 +299,4 @@ VOID UpperDeviceShutdownControlDevice(VOID)
     if (g_UpperControlDevice != NULL) {
         UpperControlGetContext(g_UpperControlDevice)->FilterContext = NULL;
     }
-}
-
-NTSTATUS UpperDeviceSendLowerControlIoctl(
-    _In_ PUPPER_DEVICE_CONTEXT Context,
-    _In_ ULONG IoControlCode,
-    _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
-    _In_ ULONG InputBufferLength,
-    _Out_writes_bytes_opt_(OutputBufferLength) PVOID OutputBuffer,
-    _In_ ULONG OutputBufferLength,
-    _Out_opt_ PULONG_PTR BytesReturned)
-{
-    PFILE_OBJECT fileObject = NULL;
-    PDEVICE_OBJECT deviceObject = NULL;
-    IO_STATUS_BLOCK ioStatus;
-    KEVENT event;
-    PIRP irp;
-    NTSTATUS status;
-
-    UNREFERENCED_PARAMETER(Context);
-
-    if (BytesReturned != NULL) {
-        *BytesReturned = 0;
-    }
-
-    status = IoGetDeviceObjectPointer(
-        (PUNICODE_STRING)&g_LowerCtlDeviceName,
-        FILE_READ_DATA | FILE_WRITE_DATA,
-        &fileObject,
-        &deviceObject);
-    if (!NT_SUCCESS(status)) {
-        return status;
-    }
-
-    KeInitializeEvent(&event, NotificationEvent, FALSE);
-    RtlZeroMemory(&ioStatus, sizeof(ioStatus));
-
-    irp = IoBuildDeviceIoControlRequest(
-        IoControlCode,
-        deviceObject,
-        InputBuffer,
-        InputBufferLength,
-        OutputBuffer,
-        OutputBufferLength,
-        FALSE,
-        &event,
-        &ioStatus);
-    if (irp == NULL) {
-        ObDereferenceObject(fileObject);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    status = IoCallDriver(deviceObject, irp);
-    if (status == STATUS_PENDING) {
-        KeWaitForSingleObject(&event, Executive, KernelMode, FALSE, NULL);
-        status = ioStatus.Status;
-    } else if (NT_SUCCESS(status)) {
-        status = ioStatus.Status;
-    }
-
-    if (BytesReturned != NULL) {
-        *BytesReturned = ioStatus.Information;
-    }
-
-    ObDereferenceObject(fileObject);
-    return status;
 }

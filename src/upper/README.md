@@ -23,9 +23,7 @@ What is not present:
 
 - broad unsupported hardware support
 - maintainer-facing raw diagnostic APIs exposed as producer contracts
-- full retirement of the lower diagnostic fallback
+- legacy lower-control fallback behavior
 
-The current implementation is the authoritative producer control and semantic
-observation path for the supported Xbox `02FF` stack. The lower control device
-remains available only as a maintainer-diagnostic fallback for unsupported
-IOCTLs and compatibility paths.
+The current implementation is the sole producer control and semantic
+observation path for the supported Xbox `02FF` stack.

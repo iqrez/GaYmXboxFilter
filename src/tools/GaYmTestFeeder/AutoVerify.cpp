@@ -593,7 +593,7 @@ int main()
     } else {
         std::printf("Observation: unavailable (error %lu)\n", GetLastError());
     }
-    std::printf("Control: producer path prefers \\\\.\\GaYmXInputFilterCtl; diagnostics may fall back to \\\\.\\GaYmFilterCtl\n");
+    std::printf("Control: sole control path is \\\\.\\GaYmXInputFilterCtl\n");
 
     if (!AcquireWriterSession(device)) {
         std::fprintf(stderr, "ERROR: Failed to acquire writer session (error %lu)\n", GetLastError());

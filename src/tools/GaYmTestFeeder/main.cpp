@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
         fprintf(stderr, "ERROR: No supported Xbox 02FF adapter found.\n");
         fprintf(stderr, "  - Is the driver installed and a controller plugged in?\n");
         fprintf(stderr, "  - Run as Administrator.\n");
-        fprintf(stderr, "  - Maintainer diagnostics remain available via \\\\.\\GaYmFilterCtl when attached.\n");
+        fprintf(stderr, "  - The sole control path is \\\\.\\GaYmXInputFilterCtl.\n");
         return 1;
     }
 
@@ -165,7 +165,7 @@ int main(int argc, char* argv[])
     } else {
         printf("[Observation] unavailable (error %lu)\n", GetLastError());
     }
-    printf("[Control] Producer control prefers \\\\.\\GaYmXInputFilterCtl; maintainer diagnostics may fall back to \\\\.\\GaYmFilterCtl\n");
+    printf("[Control] Sole control path: \\\\.\\GaYmXInputFilterCtl\n");
 
     /* ── Create input provider ── */
     auto provider = CreateProvider(cfg.provider, cfg);

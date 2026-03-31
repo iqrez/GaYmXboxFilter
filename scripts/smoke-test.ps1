@@ -19,6 +19,12 @@ $stageRoot = if ($Configuration -eq 'Debug') {
 $installStatePath = Join-Path $repoRoot 'out\install-driver-state.json'
 $pnputil = Join-Path $env:SystemRoot 'System32\pnputil.exe'
 
+function Clear-InstallState {
+    if (Test-Path -LiteralPath $installStatePath) {
+        Remove-Item -LiteralPath $installStatePath -Force
+    }
+}
+
 function Find-ConnectedInstanceId {
     param(
         [string]$TargetHardwareId
@@ -149,6 +155,7 @@ if (Test-Path -LiteralPath $installStatePath) {
             throw "Driver install is pending reboot for $($installState.targetHardwareId). Reboot once, reconnect the controller, rerun install-driver.ps1, then rerun smoke-test.ps1."
         }
 
+        Clear-InstallState
         Write-Warning "Ignoring stale install reboot checkpoint at $installStatePath because the live device no longer reports reboot-required state."
     }
 }

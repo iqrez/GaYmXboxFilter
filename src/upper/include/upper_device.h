@@ -59,4 +59,5 @@ NTSTATUS UpperDeviceParseNativeReport(
     _In_reads_bytes_(InputSize) const UCHAR* InputBuffer,
     _In_ ULONG InputSize,
     _Out_ GAYM_REPORT* Report);
+NTSTATUS UpperDeviceEnsureObservedReport(_In_ PUPPER_DEVICE_CONTEXT Context);
 VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context);

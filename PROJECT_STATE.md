@@ -48,6 +48,9 @@ Completed in the current baseline:
 - made the upper driver the authoritative owner of writer sessions, override
   state, semantic report injection, primary device info, and semantic
   observation for the supported Xbox `02FF` target
+- completed native upper-path semantic observation so `GAYM_OBSERVATION`
+  always resolves from parsed native HID traffic rather than a synthetic
+  client fallback
 - removed the lower control device and all transitional lower control logic
 - narrowed the lower driver to native observation and request forwarding only
 - aligned the curated Release bundle and live verification flow with the staged
@@ -69,6 +72,8 @@ Still open after this baseline:
   entry points on the lower stack
 - live driver validation requires paired upper/lower INF `DriverVer` bumps, or
   Windows may keep older active packages bound to the device stack
+- upper semantic observation now depends on obtaining at least one real native
+  report from the live stack and should fail rather than synthesize state
 
 ## Next Recommended Slice
 

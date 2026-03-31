@@ -95,7 +95,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     BOOLEAN hasSupportedTarget;
     ULONG reportsInjected;
     ULONG reportsObserved;
-    LONG readRequestsSeen;
     USHORT vendorId;
     USHORT productId;
     KIRQL oldIrql;
@@ -116,7 +115,6 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     productId = Context->ProductId;
     reportsInjected = Context->ReportsInjected;
     reportsObserved = Context->ReportsObserved;
-    readRequestsSeen = Context->ReadRequestsSeen;
     hasSupportedTarget =
         isAttached &&
         isInD0 &&
@@ -147,10 +145,7 @@ VOID UpperDeviceUpdateObservation(_In_ PUPPER_DEVICE_CONTEXT Context)
     if (overrideEnabled) {
         Context->LastObservation.StatusFlags |= GAYM_STATUS_OVERRIDE_ACTIVE;
     }
-    if (!hasObservedReport) {
-        Context->LastObservation.StatusFlags |= GAYM_STATUS_OBSERVATION_SYNTHETIC;
-    }
-    Context->LastObservation.LastObservedSequence = (ULONGLONG)readRequestsSeen;
+    Context->LastObservation.LastObservedSequence = (ULONGLONG)reportsObserved;
     Context->LastObservation.LastInjectedSequence = reportsInjected;
     Context->LastObservation.TimestampQpc = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
     if (hasObservedReport) {

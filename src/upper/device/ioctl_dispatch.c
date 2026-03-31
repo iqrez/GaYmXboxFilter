@@ -216,6 +216,10 @@ NTSTATUS UpperDeviceHandleIoctl(_In_ PUPPER_DEVICE_CONTEXT Context, _In_ WDFREQU
         UpperBuildDeviceInfo(Context, &Context->LastDeviceInfo);
         return UpperCopyOutputBuffer(Request, &Context->LastDeviceInfo, sizeof(Context->LastDeviceInfo));
     case IOCTL_GAYM_QUERY_OBSERVATION:
+        status = UpperDeviceEnsureObservedReport(Context);
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
         UpperDeviceUpdateObservation(Context);
         return UpperCopyOutputBuffer(Request, &Context->LastObservation, sizeof(Context->LastObservation));
     case IOCTL_GAYM_SET_JITTER:

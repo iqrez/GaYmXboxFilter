@@ -5,6 +5,8 @@
 
 static EVT_WDF_REQUEST_COMPLETION_ROUTINE UpperEvtInputRequestCompletion;
 
+#define UPPER_OBSERVATION_TAG 'ObUG'
+
 static BOOLEAN UpperShouldInterceptReadIoctl(_In_ ULONG IoControlCode)
 {
     switch (IoControlCode) {
@@ -134,6 +136,105 @@ static VOID UpperRecordObservedReport(
     Context->HasObservedReport = TRUE;
     Context->ReportsObserved++;
     KeReleaseSpinLock(&Context->StateLock, oldIrql);
+}
+
+static NTSTATUS UpperRefreshObservedReportFromLower(_In_ PUPPER_DEVICE_CONTEXT Context)
+{
+    WDF_MEMORY_DESCRIPTOR outputDescriptor;
+    WDF_MEMORY_DESCRIPTOR inputDescriptor;
+    HID_XFER_PACKET packet;
+    PUCHAR buffer;
+    ULONG bufferLength;
+    ULONG_PTR bytesRead;
+    BOOLEAN isAttached;
+    BOOLEAN isInD0;
+    USHORT vendorId;
+    USHORT productId;
+    KIRQL oldIrql;
+    NTSTATUS status;
+
+    if (Context == NULL || Context->LowerTarget == NULL) {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    isAttached = Context->IsAttached;
+    isInD0 = Context->IsInD0;
+    vendorId = Context->VendorId;
+    productId = Context->ProductId;
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
+
+    if (!isAttached || !isInD0 || vendorId != 0x045E || productId != 0x02FF) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    bufferLength = 16;
+    buffer = (PUCHAR)ExAllocatePoolZero(NonPagedPoolNx, bufferLength, UPPER_OBSERVATION_TAG);
+    if (buffer == NULL) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&outputDescriptor, buffer, bufferLength);
+    bytesRead = 0;
+    status = WdfIoTargetSendReadSynchronously(
+        Context->LowerTarget,
+        NULL,
+        &outputDescriptor,
+        NULL,
+        NULL,
+        &bytesRead);
+    if (NT_SUCCESS(status) && bytesRead != 0) {
+        UpperRecordObservedReport(Context, buffer, (ULONG)min((ULONG_PTR)bufferLength, bytesRead));
+        ExFreePoolWithTag(buffer, UPPER_OBSERVATION_TAG);
+        return STATUS_SUCCESS;
+    }
+
+    RtlZeroMemory(&packet, sizeof(packet));
+    packet.reportBuffer = buffer;
+    packet.reportBufferLen = bufferLength;
+    packet.reportId = 0;
+
+    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&inputDescriptor, &packet, sizeof(packet));
+    bytesRead = 0;
+    status = WdfIoTargetSendInternalIoctlSynchronously(
+        Context->LowerTarget,
+        NULL,
+        IOCTL_HID_GET_INPUT_REPORT,
+        &inputDescriptor,
+        NULL,
+        NULL,
+        &bytesRead);
+    if (NT_SUCCESS(status) && packet.reportBufferLen != 0) {
+        UpperRecordObservedReport(
+            Context,
+            buffer,
+            (ULONG)min((ULONG)packet.reportBufferLen, bufferLength));
+        ExFreePoolWithTag(buffer, UPPER_OBSERVATION_TAG);
+        return STATUS_SUCCESS;
+    }
+
+    ExFreePoolWithTag(buffer, UPPER_OBSERVATION_TAG);
+    return status;
+}
+
+NTSTATUS UpperDeviceEnsureObservedReport(_In_ PUPPER_DEVICE_CONTEXT Context)
+{
+    BOOLEAN hasObservedReport;
+    KIRQL oldIrql;
+
+    if (Context == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    KeAcquireSpinLock(&Context->StateLock, &oldIrql);
+    hasObservedReport = Context->HasObservedReport;
+    KeReleaseSpinLock(&Context->StateLock, oldIrql);
+
+    if (hasObservedReport) {
+        return STATUS_SUCCESS;
+    }
+
+    return UpperRefreshObservedReportFromLower(Context);
 }
 
 static NTSTATUS UpperForwardRequestToLower(

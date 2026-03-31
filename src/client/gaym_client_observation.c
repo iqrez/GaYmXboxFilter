@@ -16,7 +16,6 @@ static HANDLE gaym_client_open_upper_observation_handle(void)
 
 BOOL gaym_client_query_semantic_observation_handle(HANDLE device, PGAYM_OBSERVATION_V1 observation)
 {
-    GAYM_DEVICE_INFO info;
     HANDLE upperHandle;
 
     if (observation == NULL) {
@@ -53,27 +52,7 @@ BOOL gaym_client_query_semantic_observation_handle(HANDLE device, PGAYM_OBSERVAT
             NULL)) {
         return TRUE;
     }
-
-    if (!gaym_client_query_device_info_handle(device, &info)) {
-        return FALSE;
-    }
-
-    gaym_client_populate_protocol_header(&observation->Header, (ULONG)sizeof(*observation));
-    observation->AdapterFamily = gaym_client_adapter_family_from_device_type(info.DeviceType);
-    observation->CapabilityFlags =
-        GAYM_CAPABILITY_SEMANTIC_CONTROL |
-        GAYM_CAPABILITY_SEMANTIC_OBSERVATION |
-        GAYM_CAPABILITY_NATIVE_DIAGNOSTICS;
-    observation->StatusFlags = GAYM_STATUS_DEVICE_PRESENT | GAYM_STATUS_OBSERVATION_SYNTHETIC;
-    if (info.OverrideActive) {
-        observation->StatusFlags |= GAYM_STATUS_OVERRIDE_ACTIVE;
-    }
-
-    observation->LastObservedSequence = info.ReadRequestsSeen;
-    observation->LastInjectedSequence = info.ReportsSent;
-    observation->TimestampQpc = gaym_client_query_qpc();
-    observation->BatteryPercent = 0xFF;
-    return TRUE;
+    return FALSE;
 }
 
 BOOL gaym_client_query_semantic_observation_session(const GAYM_CLIENT_SESSION* session, PGAYM_OBSERVATION_V1 observation)

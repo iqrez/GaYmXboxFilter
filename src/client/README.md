@@ -10,8 +10,8 @@ Current state:
   through the upper control device
 - legacy compatibility helpers keep the public API surface stable without
   reintroducing a lower control fallback
-- the remaining synthetic observation path is a compatibility fallback used
-  only when parsed upper-path observation is not yet available
+- native observation is complete on the upper path, so semantic observation no
+  longer falls back to synthetic client-side state
 
 This keeps the producer/platform split real in source control while preserving
 the established public API.

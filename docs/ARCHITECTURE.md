@@ -19,8 +19,8 @@ Current implementation state:
 - `gaym_client` owns the stable producer-facing API
 - the upper driver owns writer sessions, override state, semantic injection,
   primary device info, and semantic observation for the supported target
-- semantic observation is materialized from parsed completed reads on the
-  upper path rather than mirrored directly from injection input
+- semantic observation is materialized from parsed native HID reads on the
+  upper path, with no synthetic client fallback
 - the lower driver is forwarding plus native observation only
 - `scripts/` is the supported Debug/Release build, install, verify, and
   packaging workflow
@@ -36,7 +36,7 @@ Responsibilities:
   handling, and semantic control/observation plumbing.
 - The upper driver owns authoritative override state, writer enforcement,
   semantic-to-native injection, XInput read replacement, primary device info,
-  and semantic observation on the supported target.
+  and hardware-backed semantic observation on the supported target.
 - The lower driver owns native-path forwarding and native observation capture.
 - Shared ABI headers own protocol/versioning and the portable semantic shapes.
 
@@ -145,7 +145,7 @@ Owns:
 - authoritative writer-session enforcement for control mutation
 - semantic `GAYM_REPORT` to native packet translation
 - XInput-facing read replacement / completion logic
-- minimal semantic observation materialization from parsed completed reads
+- minimal semantic observation materialization from parsed native HID reads
 - upper-path safety reset on file cleanup, PnP, and power transitions
 - primary status and device-info query surface
 - attach-time hardening so the device only reports Xbox `02FF` identity when
